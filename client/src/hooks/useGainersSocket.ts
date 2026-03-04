@@ -17,8 +17,15 @@ export function useGainersSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const connectRef = useRef<() => void>(undefined);
 
   const connect = useCallback(() => {
+    // Clear any pending reconnect timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
     // Clean up existing connection
     if (wsRef.current) {
       wsRef.current.close();
@@ -60,6 +67,11 @@ export function useGainersSocket() {
       };
 
       ws.onclose = (event) => {
+        if (wsRef.current !== ws) {
+          console.log('Stale WebSocket closed, ignoring.');
+          return;
+        }
+
         console.log('WebSocket closed:', event.code, event.reason);
         setConnectionState((prev) => ({
           ...prev,
@@ -78,7 +90,7 @@ export function useGainersSocket() {
           }));
 
           reconnectTimeoutRef.current = window.setTimeout(() => {
-            connect();
+            connectRef.current?.();
           }, delay);
         } else {
           setConnectionState((prev) => ({
@@ -89,10 +101,13 @@ export function useGainersSocket() {
       };
     } catch (err) {
       console.error('Failed to create WebSocket:', err);
-      setConnectionState({
-        isConnected: false,
-        error: 'Failed to connect to server',
-        reconnectAttempt: 0,
+      // Defer setState to avoid synchronous call in effect body
+      queueMicrotask(() => {
+        setConnectionState({
+          isConnected: false,
+          error: 'Failed to connect to server',
+          reconnectAttempt: 0,
+        });
       });
     }
   }, []);
@@ -107,6 +122,11 @@ export function useGainersSocket() {
       wsRef.current = null;
     }
   }, []);
+
+  // Keep connectRef in sync for recursive reconnection
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const retry = useCallback(() => {
     reconnectAttemptRef.current = 0;
