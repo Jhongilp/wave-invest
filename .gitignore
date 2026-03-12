@@ -11,6 +11,7 @@ server/*.exe~
 server/*.dll
 server/*.so
 server/*.dylib
+server/tmp
 
 # Client (Node/React)
 client/node_modules/
