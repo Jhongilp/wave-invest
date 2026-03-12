@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -49,39 +48,11 @@ type PricePoint struct {
 
 // WatchlistItemDto represents an item from eToro's watchlist API
 type WatchlistItemDto struct {
-	ItemID          int        `json:"itemId"`
-	ItemType        string     `json:"itemType"`
-	ItemRank        int        `json:"itemRank"`
-	ItemAddedReason string     `json:"itemAddedReason"`
-	ItemAddedDate   string     `json:"itemAddedDate"`
-	Market          *MarketDto `json:"market,omitempty"`
-}
-
-// MarketDto represents market metadata for an instrument
-type MarketDto struct {
-	ID                     string     `json:"id"`
-	SymbolName             string     `json:"symbolName"`
-	DisplayName            string     `json:"displayName"`
-	AssetTypeID            int        `json:"assetTypeId"`
-	AssetTypeSubCategoryID *int       `json:"assetTypeSubCategoryId"`
-	ExchangeID             int        `json:"exchangeId"`
-	HasExpirationDate      bool       `json:"hasExpirationDate"`
-	Avatar                 *AvatarDto `json:"avatar,omitempty"`
-}
-
-// AvatarDto represents avatar images for an instrument
-type AvatarDto struct {
-	Small  string     `json:"small"`
-	Medium string     `json:"medium"`
-	Large  string     `json:"large"`
-	SVG    *SVGAvatar `json:"svg,omitempty"`
-}
-
-// SVGAvatar represents SVG avatar with colors
-type SVGAvatar struct {
-	URL             string `json:"url"`
-	BackgroundColor string `json:"backgroundColor"`
-	TextColor       string `json:"textColor"`
+	ItemID          int    `json:"itemId"`
+	ItemType        string `json:"itemType"`
+	ItemRank        int    `json:"itemRank"`
+	ItemAddedReason string `json:"itemAddedReason"`
+	ItemAddedDate   string `json:"itemAddedDate"`
 }
 
 // InstrumentsResponse represents the response from the instruments metadata endpoint
@@ -108,14 +79,6 @@ func (c *Client) doRequest(req *http.Request) ([]byte, error) {
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("x-user-key", c.userKey)
 	req.Header.Set("Accept", "application/json")
-
-	log.Printf("Request URL: %s", req.URL.String())
-	if len(c.apiKey) > 10 {
-		log.Printf("API key starts with: %s...", c.apiKey[:10])
-	}
-	if len(c.userKey) > 10 {
-		log.Printf("User key starts with: %s...", c.userKey[:10])
-	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -165,17 +128,13 @@ func (c *Client) GetInstrumentMetadata(instrumentIDs []int) (map[int]InstrumentD
 		// Set raw query without URL-encoding commas
 		req.URL.RawQuery = "instrumentIds=" + strings.Join(idStrs, ",")
 
-		log.Printf("Fetching instrument metadata batch %d-%d of %d", i, end, len(instrumentIDs))
-
 		body, err := c.doRequest(req)
 		if err != nil {
-			log.Printf("Error fetching instrument metadata: %v", err)
 			continue // Skip this batch but continue with others
 		}
 
 		var response InstrumentsResponse
 		if err := json.Unmarshal(body, &response); err != nil {
-			log.Printf("Error unmarshaling instrument response: %v", err)
 			continue
 		}
 
@@ -184,7 +143,6 @@ func (c *Client) GetInstrumentMetadata(instrumentIDs []int) (map[int]InstrumentD
 		}
 	}
 
-	log.Printf("Fetched metadata for %d instruments", len(result))
 	return result, nil
 }
 
@@ -209,8 +167,6 @@ func (c *Client) GetWatchlist() ([]models.Ticker, error) {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	log.Printf("eToro returned %d watchlist items", len(items))
-
 	// Collect instrument IDs
 	instrumentIDs := make([]int, 0)
 	for _, item := range items {
@@ -220,11 +176,7 @@ func (c *Client) GetWatchlist() ([]models.Ticker, error) {
 	}
 
 	// Fetch instrument metadata
-	instrumentMap, err := c.GetInstrumentMetadata(instrumentIDs)
-	if err != nil {
-		log.Printf("Warning: failed to fetch instrument metadata: %v", err)
-		// Continue with IDs as symbols
-	}
+	instrumentMap, _ := c.GetInstrumentMetadata(instrumentIDs)
 
 	// Convert to Ticker models
 	tickers := make([]models.Ticker, 0, len(instrumentIDs))
@@ -248,7 +200,6 @@ func (c *Client) GetWatchlist() ([]models.Ticker, error) {
 		}
 	}
 
-	log.Printf("Returning %d tickers", len(tickers))
 	return tickers, nil
 }
 
