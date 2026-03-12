@@ -1,22 +1,30 @@
 package etoro
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
+
+	"github.com/google/uuid"
 
 	"wave_invest/internal/models"
 )
 
 type Client struct {
-	apiKey    string
-	apiSecret string
-	baseURL   string
+	apiKey     string
+	userKey    string
+	baseURL    string
+	httpClient *http.Client
 }
 
 func NewClient() *Client {
 	return &Client{
-		apiKey:    os.Getenv("ETORO_API_KEY"),
-		apiSecret: os.Getenv("ETORO_API_SECRET"),
-		baseURL:   "https://api.etoro.com",
+		apiKey:     os.Getenv("ETORO_API_KEY"),
+		userKey:    os.Getenv("ETORO_USER_KEY"),
+		baseURL:    "https://public-api.etoro.com",
+		httpClient: &http.Client{},
 	}
 }
 
@@ -36,20 +44,99 @@ type PricePoint struct {
 	Volume float64 `json:"volume"`
 }
 
-// GetWatchlist fetches the user's watchlist from eToro
-// TODO: Implement actual eToro API integration
+// WatchlistItemDto represents an item from eToro's watchlist API
+type WatchlistItemDto struct {
+	ItemID          int        `json:"itemId"`
+	ItemType        string     `json:"itemType"`
+	ItemRank        int        `json:"itemRank"`
+	ItemAddedReason string     `json:"itemAddedReason"`
+	ItemAddedDate   string     `json:"itemAddedDate"`
+	Market          *MarketDto `json:"market,omitempty"`
+}
+
+// MarketDto represents market metadata for an instrument
+type MarketDto struct {
+	ID                     string     `json:"id"`
+	SymbolName             string     `json:"symbolName"`
+	DisplayName            string     `json:"displayName"`
+	AssetTypeID            int        `json:"assetTypeId"`
+	AssetTypeSubCategoryID *int       `json:"assetTypeSubCategoryId"`
+	ExchangeID             int        `json:"exchangeId"`
+	HasExpirationDate      bool       `json:"hasExpirationDate"`
+	Avatar                 *AvatarDto `json:"avatar,omitempty"`
+}
+
+// AvatarDto represents avatar images for an instrument
+type AvatarDto struct {
+	Small  string     `json:"small"`
+	Medium string     `json:"medium"`
+	Large  string     `json:"large"`
+	SVG    *SVGAvatar `json:"svg,omitempty"`
+}
+
+// SVGAvatar represents SVG avatar with colors
+type SVGAvatar struct {
+	URL             string `json:"url"`
+	BackgroundColor string `json:"backgroundColor"`
+	TextColor       string `json:"textColor"`
+}
+
+// GetWatchlist fetches the user's default watchlist from eToro
 func (c *Client) GetWatchlist() ([]models.Ticker, error) {
-	// Mock data for development
-	return []models.Ticker{
-		{Symbol: "AAPL", Name: "Apple Inc.", Price: 178.50, Change: 2.35, ChangePercent: 1.33},
-		{Symbol: "MSFT", Name: "Microsoft Corporation", Price: 378.25, Change: -1.20, ChangePercent: -0.32},
-		{Symbol: "GOOGL", Name: "Alphabet Inc.", Price: 141.80, Change: 3.45, ChangePercent: 2.49},
-		{Symbol: "NVDA", Name: "NVIDIA Corporation", Price: 875.40, Change: 15.60, ChangePercent: 1.81},
-		{Symbol: "TSLA", Name: "Tesla, Inc.", Price: 245.30, Change: -5.80, ChangePercent: -2.31},
-		{Symbol: "META", Name: "Meta Platforms, Inc.", Price: 485.60, Change: 8.90, ChangePercent: 1.87},
-		{Symbol: "AMZN", Name: "Amazon.com, Inc.", Price: 178.90, Change: 1.25, ChangePercent: 0.70},
-		{Symbol: "AMD", Name: "Advanced Micro Devices", Price: 165.20, Change: -2.40, ChangePercent: -1.43},
-	}, nil
+	req, err := http.NewRequest("GET", c.baseURL+"/api/v1/watchlists/default-watchlists/items", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add query parameters
+	q := req.URL.Query()
+	q.Add("itemsPerPage", "100")
+	req.URL.RawQuery = q.Encode()
+
+	// Set required headers
+	req.Header.Set("x-request-id", uuid.New().String())
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("x-user-key", c.userKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch watchlist: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("eToro API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var items []WatchlistItemDto
+	if err := json.Unmarshal(body, &items); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Convert WatchlistItemDto to Ticker models
+	tickers := make([]models.Ticker, 0, len(items))
+	for _, item := range items {
+		// Only include items that have market data (instruments)
+		if item.Market != nil && item.ItemType == "Instrument" {
+			ticker := models.Ticker{
+				Symbol: item.Market.SymbolName,
+				Name:   item.Market.DisplayName,
+				// Price data would need to come from a separate price endpoint
+				Price:         0,
+				Change:        0,
+				ChangePercent: 0,
+			}
+			tickers = append(tickers, ticker)
+		}
+	}
+
+	return tickers, nil
 }
 
 // GetTickerData fetches historical price data for a ticker
