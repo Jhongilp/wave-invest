@@ -1,78 +1,313 @@
 package gemini
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
 	"wave_invest/internal/models"
-	"wave_invest/pkg/etoro"
 )
 
 type Client struct {
-	apiKey string
+	apiKey     string
+	httpClient *http.Client
 }
 
 func NewClient() *Client {
 	return &Client{
 		apiKey: os.Getenv("GEMINI_API_KEY"),
+		httpClient: &http.Client{
+			Timeout: 90 * time.Second,
+		},
 	}
 }
 
-// GenerateTradingPlan uses Gemini AI to analyze ticker data and generate a trading plan
-// TODO: Implement actual Gemini API integration
-func (c *Client) GenerateTradingPlan(ticker string, data *etoro.TickerData) (*models.TradingPlan, error) {
-	// Mock response for development
-	// In production, this would call the Gemini API with a carefully crafted prompt
-	currentPrice := 178.50
-	if len(data.Prices) > 0 {
-		currentPrice = data.Prices[0].Close
+// GenerateTradingPlan uses Gemini AI with Google Search grounding to analyze a ticker
+func (c *Client) GenerateTradingPlan(ticker string) (*models.TradingPlan, error) {
+	prompt := buildAnalysisPrompt(ticker)
+
+	reqBody := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"parts": []map[string]interface{}{
+					{"text": prompt},
+				},
+			},
+		},
+		"tools": []map[string]interface{}{
+			{
+				"google_search": map[string]interface{}{},
+			},
+		},
+		"generationConfig": map[string]interface{}{
+			"responseMimeType": "application/json",
+			"responseSchema":   getResponseSchema(),
+		},
 	}
 
-	return &models.TradingPlan{
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=%s", c.apiKey)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	return parseAPIResponse(ticker, body)
+}
+
+func getResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"technicals": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"ma20":  map[string]interface{}{"type": "number"},
+					"ma50":  map[string]interface{}{"type": "number"},
+					"ma200": map[string]interface{}{"type": "number"},
+					"rsi":   map[string]interface{}{"type": "number"},
+					"volumeProfile": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"price":  map[string]interface{}{"type": "number"},
+								"volume": map[string]interface{}{"type": "number"},
+								"type":   map[string]interface{}{"type": "string"},
+							},
+							"required": []string{"price", "volume", "type"},
+						},
+					},
+				},
+				"required": []string{"ma20", "ma50", "ma200", "rsi", "volumeProfile"},
+			},
+			"levels": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"support":    map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "number"}},
+					"resistance": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "number"}},
+				},
+				"required": []string{"support", "resistance"},
+			},
+			"trade": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"bias": map[string]interface{}{"type": "string", "enum": []string{"bullish", "bearish", "neutral"}},
+					"entryZone": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"low":  map[string]interface{}{"type": "number"},
+							"high": map[string]interface{}{"type": "number"},
+						},
+						"required": []string{"low", "high"},
+					},
+					"stopLoss":        map[string]interface{}{"type": "number"},
+					"riskRewardRatio": map[string]interface{}{"type": "number"},
+					"targets": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"pt1": map[string]interface{}{"type": "number"},
+							"pt2": map[string]interface{}{"type": "number"},
+							"pt3": map[string]interface{}{"type": "number"},
+						},
+						"required": []string{"pt1", "pt2", "pt3"},
+					},
+				},
+				"required": []string{"bias", "entryZone", "stopLoss", "targets", "riskRewardRatio"},
+			},
+			"sentiment": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"score":             map[string]interface{}{"type": "integer"},
+					"institutionalFlow": map[string]interface{}{"type": "string"},
+					"smartMoneyBets":    map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+				},
+				"required": []string{"score", "institutionalFlow", "smartMoneyBets"},
+			},
+			"summary": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"technicals", "levels", "trade", "sentiment", "summary"},
+	}
+}
+
+func buildAnalysisPrompt(ticker string) string {
+	return fmt.Sprintf(`You are an expert swing trading analyst. Use Google Search to get CURRENT real-time market data.
+
+IMPORTANT: Search for the latest stock price and market data for ticker: %s
+
+Use Google Search to find:
+- Current stock price (as of today)
+- Recent price action and trends
+- Current technical indicator values
+- Recent news and sentiment
+
+Then generate a comprehensive swing trading plan with:
+
+1. TECHNICALS:
+   - Moving Averages (MA20, MA50, MA200) - use actual current values
+   - RSI (0-100) - use actual current value
+   - Volume Profile with 2-3 key price levels showing high/low volume zones
+
+2. KEY LEVELS:
+   - 3 Support levels (based on current price action)
+   - 3 Resistance levels (based on current price action)
+
+3. TRADE SETUP:
+   - Bias (bullish/bearish/neutral)
+   - Entry Zone (low and high price range for optimal entry)
+   - Stop Loss level
+   - 3 Price Targets (PT1: conservative, PT2: moderate, PT3: aggressive)
+   - Risk/Reward Ratio
+
+4. SENTIMENT:
+   - Score (-100 bearish to +100 bullish)
+   - Institutional Flow description
+   - Smart Money indicators (2-3 observations)
+
+5. SUMMARY:
+   - Concise actionable trading summary including the current price
+
+Focus on swing trading timeframe (1-4 weeks holding period). All price levels must reflect CURRENT market prices from your search.
+`, ticker)
+}
+
+// APIResponse represents the Gemini API response structure
+type APIResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+}
+
+// GeminiResponse represents the JSON structure from Gemini
+type GeminiResponse struct {
+	Technicals struct {
+		MA20          float64 `json:"ma20"`
+		MA50          float64 `json:"ma50"`
+		MA200         float64 `json:"ma200"`
+		RSI           float64 `json:"rsi"`
+		VolumeProfile []struct {
+			Price  float64 `json:"price"`
+			Volume float64 `json:"volume"`
+			Type   string  `json:"type"`
+		} `json:"volumeProfile"`
+	} `json:"technicals"`
+	Levels struct {
+		Support    []float64 `json:"support"`
+		Resistance []float64 `json:"resistance"`
+	} `json:"levels"`
+	Trade struct {
+		Bias      string `json:"bias"`
+		EntryZone struct {
+			Low  float64 `json:"low"`
+			High float64 `json:"high"`
+		} `json:"entryZone"`
+		StopLoss float64 `json:"stopLoss"`
+		Targets  struct {
+			PT1 float64 `json:"pt1"`
+			PT2 float64 `json:"pt2"`
+			PT3 float64 `json:"pt3"`
+		} `json:"targets"`
+		RiskRewardRatio float64 `json:"riskRewardRatio"`
+	} `json:"trade"`
+	Sentiment struct {
+		Score             int      `json:"score"`
+		InstitutionalFlow string   `json:"institutionalFlow"`
+		SmartMoneyBets    []string `json:"smartMoneyBets"`
+	} `json:"sentiment"`
+	Summary string `json:"summary"`
+}
+
+func parseAPIResponse(ticker string, body []byte) (*models.TradingPlan, error) {
+	var apiResp APIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal API response: %w", err)
+	}
+
+	if len(apiResp.Candidates) == 0 || len(apiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from Gemini")
+	}
+
+	textContent := apiResp.Candidates[0].Content.Parts[0].Text
+
+	var geminiResp GeminiResponse
+	if err := json.Unmarshal([]byte(textContent), &geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal trading plan: %w", err)
+	}
+
+	// Convert to TradingPlan model
+	volumeProfile := make([]models.VolumeLevel, len(geminiResp.Technicals.VolumeProfile))
+	for i, v := range geminiResp.Technicals.VolumeProfile {
+		volumeProfile[i] = models.VolumeLevel{
+			Price:  v.Price,
+			Volume: v.Volume,
+			Type:   v.Type,
+		}
+	}
+
+	plan := &models.TradingPlan{
 		Ticker:     ticker,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339),
 		Technicals: models.Technicals{
-			MA20:  currentPrice * 0.98,
-			MA50:  currentPrice * 0.95,
-			MA200: currentPrice * 0.88,
-			RSI:   data.CurrentRSI,
-			VolumeProfile: []models.VolumeLevel{
-				{Price: currentPrice * 0.95, Volume: 25000000, Type: "high"},
-				{Price: currentPrice * 1.02, Volume: 18000000, Type: "high"},
-				{Price: currentPrice * 0.92, Volume: 12000000, Type: "low"},
-			},
+			MA20:          geminiResp.Technicals.MA20,
+			MA50:          geminiResp.Technicals.MA50,
+			MA200:         geminiResp.Technicals.MA200,
+			RSI:           geminiResp.Technicals.RSI,
+			VolumeProfile: volumeProfile,
 		},
 		Levels: models.Levels{
-			Support:    []float64{currentPrice * 0.95, currentPrice * 0.90, currentPrice * 0.85},
-			Resistance: []float64{currentPrice * 1.05, currentPrice * 1.10, currentPrice * 1.15},
+			Support:    geminiResp.Levels.Support,
+			Resistance: geminiResp.Levels.Resistance,
 		},
 		Trade: models.Trade{
-			Bias: "bullish",
+			Bias: geminiResp.Trade.Bias,
 			EntryZone: models.EntryZone{
-				Low:  currentPrice * 0.97,
-				High: currentPrice * 0.99,
+				Low:  geminiResp.Trade.EntryZone.Low,
+				High: geminiResp.Trade.EntryZone.High,
 			},
-			StopLoss: currentPrice * 0.93,
+			StopLoss: geminiResp.Trade.StopLoss,
 			Targets: models.Targets{
-				PT1: currentPrice * 1.05,
-				PT2: currentPrice * 1.10,
-				PT3: currentPrice * 1.18,
+				PT1: geminiResp.Trade.Targets.PT1,
+				PT2: geminiResp.Trade.Targets.PT2,
+				PT3: geminiResp.Trade.Targets.PT3,
 			},
-			RiskRewardRatio: 2.5,
+			RiskRewardRatio: geminiResp.Trade.RiskRewardRatio,
 		},
 		Sentiment: models.Sentiment{
-			Score:             65,
-			InstitutionalFlow: "Net buying observed over the past 5 sessions",
-			SmartMoneyBets: []string{
-				"Large call options volume at $190 strike",
-				"Institutional accumulation detected",
-				"Insider buying reported last week",
-			},
+			Score:             geminiResp.Sentiment.Score,
+			InstitutionalFlow: geminiResp.Sentiment.InstitutionalFlow,
+			SmartMoneyBets:    geminiResp.Sentiment.SmartMoneyBets,
 		},
-		Summary: "Technical analysis suggests a bullish setup with price consolidating above key moving averages. RSI indicates room for upside. Consider entries in the $" + formatPrice(currentPrice*0.97) + "-$" + formatPrice(currentPrice*0.99) + " zone with a stop loss below $" + formatPrice(currentPrice*0.93) + ". Multiple price targets offer favorable risk/reward ratio of 2.5:1.",
-	}, nil
-}
+		Summary: geminiResp.Summary,
+	}
 
-func formatPrice(price float64) string {
-	return string(rune(int(price)))
+	return plan, nil
 }

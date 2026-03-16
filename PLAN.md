@@ -35,8 +35,8 @@ Stack:
   - [ ] `GetTickerData(symbol)` - Fetch price history, volume
 - [ ] Add rate limiting and error handling
 
-### 1.3 Gemini AI Integration
-- [ ] Set up Gemini API client
+### 1.3 Gemini AI Integration 
+- [ ] Set up Gemini API client (using "gemini-3-flash-preview" model)
 - [ ] Design prompt engineering for swing trading analysis:
   - Technical indicators (MA, RSI, Volume Profile)
   - Key price levels (support/resistance)

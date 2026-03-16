@@ -4,12 +4,10 @@ import (
 	"sync"
 
 	"wave_invest/internal/models"
-	"wave_invest/pkg/etoro"
 	"wave_invest/pkg/gemini"
 )
 
 type AnalyzerService struct {
-	etoroClient  *etoro.Client
 	geminiClient *gemini.Client
 	cache        map[string]*models.TradingPlan
 	cacheMu      sync.RWMutex
@@ -17,21 +15,14 @@ type AnalyzerService struct {
 
 func NewAnalyzerService() *AnalyzerService {
 	return &AnalyzerService{
-		etoroClient:  etoro.NewClient(),
 		geminiClient: gemini.NewClient(),
 		cache:        make(map[string]*models.TradingPlan),
 	}
 }
 
 func (s *AnalyzerService) Analyze(ticker string) (*models.TradingPlan, error) {
-	// Get ticker data from eToro
-	tickerData, err := s.etoroClient.GetTickerData(ticker)
-	if err != nil {
-		return nil, err
-	}
-
-	// Generate trading plan using Gemini AI
-	plan, err := s.geminiClient.GenerateTradingPlan(ticker, tickerData)
+	// Generate trading plan using Gemini AI (Gemini retrieves market data)
+	plan, err := s.geminiClient.GenerateTradingPlan(ticker)
 	if err != nil {
 		return nil, err
 	}
