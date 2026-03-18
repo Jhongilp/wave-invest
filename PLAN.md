@@ -129,9 +129,82 @@ interface TradingPlan {
 
 ## Phase 2: Trading (Future)
 
-- there will be a initial budget
-- Once the trading plan is created, the app could trade using Etoro
-- Use Postgres database to store trading transactions and tickers
+---
+
+## Phase 2: Autonomous Trading with Prioritization (Detailed)
+
+### Overview
+Add a scoring system to rank watchlist tickers by trade quality, implement budget management with position sizing, and track all transactions in Firestore for autonomous trading execution.
+
+### 2.1 Scoring & Prioritization Engine
+- [ ] Create `ScoredOpportunity` model combining `TradingPlan` with computed score
+- [ ] Implement scoring algorithm in `services/scorer.go`:
+  - R/R ratio weight: 40%
+  - Sentiment weight: 25%
+  - RSI position weight: 20%
+  - Bias alignment weight: 15%
+  - Filter out neutral bias and unfavorable RSI (>70 for longs, <30 for shorts)
+- [ ] Add `GET /api/opportunities` endpoint — analyzed tickers sorted by score
+- [ ] Add `POST /api/watchlist/analyze-all` — batch analyze entire watchlist
+
+### 2.2 Firestore Setup & Data Models
+- [ ] Add Firestore Go SDK dependency and initialize client
+- [ ] Create Firestore collections:
+  - `portfolios/{userId}` — budget, availableBalance, settings
+  - `transactions/{txId}` — ticker, type, price, quantity, timestamp, status
+  - `positions/{posId}` — ticker, entryPrice, quantity, stopLoss, targets, status
+- [ ] Implement `services/portfolio.go` — CRUD for portfolio/budget management
+- [ ] Implement `services/transactions.go` — transaction logging and position tracking
+
+### 2.3 Trading Rules Engine
+- [ ] Create `services/rules.go` with configurable trading rules:
+  - Max position size (% of portfolio)
+  - Max concurrent positions
+  - Min score threshold to trade
+  - Daily loss limit
+- [ ] Implement position sizing calculator (fixed % or Kelly Criterion)
+- [ ] Add `POST /api/settings` endpoint for rule configuration
+
+### 2.4 Trading Execution
+- [ ] Create `services/executor.go` — orchestrates trade decisions
+- [ ] Implement eToro trade execution: `OpenPosition()`, `ClosePosition()`
+- [ ] Add `POST /api/trade/execute` — manual trigger
+- [ ] Add `GET /api/positions` — current open positions with P&L
+
+### 2.5 Client Dashboard
+- [ ] `OpportunitiesView` — ranked opportunities with score badges
+- [ ] `PortfolioView` — budget, positions, P&L summary
+- [ ] `TransactionsView` — transaction history
+- [ ] Hooks: `useOpportunities()`, `usePortfolio()`, `useTransactions()`
+
+### 2.6 Milestones
+| Milestone | Deliverable | Est. Time |
+|-----------|-------------|-----------|
+| M1 | Scoring algorithm + model | 3 hrs |
+| M2 | Opportunities API | 2 hrs |
+| M3 | Firestore setup | 3 hrs |
+| M4 | Portfolio & transactions | 4 hrs |
+| M5 | Trading rules engine | 3 hrs |
+| M6 | Position sizing | 2 hrs |
+| M7 | eToro execution | 4 hrs |
+| M8-9 | Client dashboards | 8 hrs |
+| M10 | Integration tests | 4 hrs |
+
+**Total Estimated Time: ~33 hours**
+
+### 2.7 Decisions
+- **Firestore over Postgres** — Simpler setup, real-time listeners, serverless
+- **Scoring weights** — R/R ratio highest (40%) as it measures trade quality
+- **Position sizing** — Fixed 2-5% per trade initially
+
+---
+
+## Phase 3: Full Autonomy (Future)
+
+- Market scanning instead of predefined watchlist
+- Notification system (webhook/email alerts)
+- Scheduled auto-analysis (cron)
+- Performance analytics and backtesting
 
 ## Phase 3: More Autonomy (Future)
 

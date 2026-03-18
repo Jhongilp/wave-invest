@@ -12,6 +12,7 @@ server/*.dll
 server/*.so
 server/*.dylib
 server/tmp
+server/*-credentials.json
 
 # Client (Node/React)
 client/node_modules/

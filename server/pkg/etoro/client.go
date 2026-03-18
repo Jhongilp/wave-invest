@@ -217,3 +217,75 @@ func (c *Client) GetTickerData(symbol string) (*TickerData, error) {
 		CurrentRSI: 58.5,
 	}, nil
 }
+
+// OpenPositionRequest represents a request to open a new position
+type OpenPositionRequest struct {
+	InstrumentID   int     `json:"instrumentId"`
+	Amount         float64 `json:"amount"`
+	IsBuy          bool    `json:"isBuy"`
+	Leverage       int     `json:"leverage"`
+	StopLossRate   float64 `json:"stopLossRate,omitempty"`
+	TakeProfitRate float64 `json:"takeProfitRate,omitempty"`
+}
+
+// OpenPositionResponse represents the response from opening a position
+type OpenPositionResponse struct {
+	PositionID string  `json:"positionId"`
+	Status     string  `json:"status"`
+	OpenRate   float64 `json:"openRate"`
+}
+
+// OpenPosition opens a new trading position on eToro
+func (c *Client) OpenPosition(req OpenPositionRequest) (*OpenPositionResponse, error) {
+	// TODO: Implement actual eToro order execution API
+	// This is a placeholder that returns a mock response for development
+	// In production, this would call: POST /api/v1/trade/positions
+
+	return &OpenPositionResponse{
+		PositionID: uuid.New().String(),
+		Status:     "opened",
+		OpenRate:   req.Amount, // Mock: using amount as rate
+	}, nil
+}
+
+// ClosePositionResponse represents the response from closing a position
+type ClosePositionResponse struct {
+	PositionID string  `json:"positionId"`
+	Status     string  `json:"status"`
+	CloseRate  float64 `json:"closeRate"`
+	PnL        float64 `json:"pnl"`
+}
+
+// ClosePosition closes an existing position on eToro
+func (c *Client) ClosePosition(positionID string) (*ClosePositionResponse, error) {
+	// TODO: Implement actual eToro position close API
+	// This is a placeholder that returns a mock response for development
+	// In production, this would call: DELETE /api/v1/trade/positions/{positionId}
+
+	return &ClosePositionResponse{
+		PositionID: positionID,
+		Status:     "closed",
+		CloseRate:  0,
+		PnL:        0,
+	}, nil
+}
+
+// GetOpenPositionsResponse represents the response for open positions
+type EtoroPosition struct {
+	PositionID   string  `json:"positionId"`
+	InstrumentID int     `json:"instrumentId"`
+	Amount       float64 `json:"amount"`
+	OpenRate     float64 `json:"openRate"`
+	CurrentRate  float64 `json:"currentRate"`
+	PnL          float64 `json:"pnl"`
+	IsBuy        bool    `json:"isBuy"`
+}
+
+// GetOpenPositions fetches all open positions from eToro
+func (c *Client) GetOpenPositions() ([]EtoroPosition, error) {
+	// TODO: Implement actual eToro positions API
+	// This is a placeholder that returns empty for development
+	// In production, this would call: GET /api/v1/trade/positions
+
+	return []EtoroPosition{}, nil
+}

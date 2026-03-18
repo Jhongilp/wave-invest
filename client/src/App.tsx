@@ -1,8 +1,17 @@
 import { useState } from 'react';
-import { DashboardLayout, Watchlist, TradingPlanView } from './components';
+import { 
+  DashboardLayout, 
+  Watchlist, 
+  TradingPlanView,
+  OpportunitiesView,
+  PortfolioView,
+  SettingsView,
+} from './components';
+import type { ViewType } from './components/Layout/DashboardLayout';
 import { useWatchlist, useTradingPlan } from './hooks';
 
 function App() {
+  const [currentView, setCurrentView] = useState<ViewType>('watchlist');
   const [selectedTicker, setSelectedTicker] = useState<string | undefined>();
   const { tickers, loading: watchlistLoading, error: watchlistError } = useWatchlist();
   const { plan, loading: planLoading, error: planError, analyze } = useTradingPlan();
@@ -12,8 +21,36 @@ function App() {
     analyze(ticker);
   };
 
+  const handleSelectFromOpportunities = (ticker: string) => {
+    setSelectedTicker(ticker);
+    analyze(ticker);
+    setCurrentView('watchlist');
+  };
+
+  const renderContent = () => {
+    switch (currentView) {
+      case 'opportunities':
+        return <OpportunitiesView onSelectTicker={handleSelectFromOpportunities} />;
+      case 'portfolio':
+        return <PortfolioView />;
+      case 'settings':
+        return <SettingsView />;
+      case 'watchlist':
+      default:
+        return (
+          <TradingPlanView
+            plan={plan}
+            loading={planLoading}
+            error={planError}
+          />
+        );
+    }
+  };
+
   return (
     <DashboardLayout
+      currentView={currentView}
+      onViewChange={setCurrentView}
       sidebar={
         <Watchlist
           tickers={tickers}
@@ -24,11 +61,7 @@ function App() {
         />
       }
     >
-      <TradingPlanView
-        plan={plan}
-        loading={planLoading}
-        error={planError}
-      />
+      {renderContent()}
     </DashboardLayout>
   );
 }

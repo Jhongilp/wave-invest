@@ -38,10 +38,28 @@ func main() {
 	r.Get("/health", handlers.HealthCheck)
 
 	r.Route("/api", func(r chi.Router) {
+		// Phase 1: Watchlist & Analysis
 		r.Get("/watchlist", handlers.GetWatchlist)
 		r.Post("/analyze/{ticker}", handlers.AnalyzeTicker)
 		r.Post("/analyze/batch", handlers.AnalyzeBatch)
 		r.Get("/plan/{ticker}", handlers.GetTradingPlan)
+
+		// Phase 2: Daily Analysis & Opportunities
+		r.Post("/daily-analysis", handlers.RunDailyAnalysis)
+		r.Get("/opportunities", handlers.GetOpportunities)
+		r.Get("/opportunities/{date}", handlers.GetOpportunitiesByDate)
+
+		// Phase 2: Portfolio & Settings
+		r.Get("/portfolio", handlers.GetPortfolio)
+		r.Post("/portfolio", handlers.CreatePortfolio)
+		r.Get("/settings", handlers.GetSettings)
+		r.Put("/settings", handlers.UpdateSettings)
+
+		// Phase 2: Trading Execution
+		r.Post("/execute-trades", handlers.ExecuteTrades)
+		r.Get("/positions", handlers.GetPositions)
+		r.Delete("/positions/{id}", handlers.ClosePosition)
+		r.Get("/transactions", handlers.GetTransactions)
 	})
 
 	port := os.Getenv("PORT")
