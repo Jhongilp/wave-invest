@@ -40,7 +40,7 @@ func (c *Client) GenerateTradingPlan(ticker string) (*models.TradingPlan, error)
 		},
 		"tools": []map[string]interface{}{
 			{
-				"google_search": map[string]interface{}{},
+				"googleSearch": map[string]interface{}{},
 			},
 		},
 		"generationConfig": map[string]interface{}{
