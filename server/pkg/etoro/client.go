@@ -1,6 +1,7 @@
 package etoro
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -236,16 +237,40 @@ type OpenPositionResponse struct {
 	OpenRate   float64 `json:"openRate"`
 }
 
+// etoroOpenPositionResponse represents eToro's actual API response
+type etoroOpenPositionResponse struct {
+	PositionID int64   `json:"positionId"`
+	OpenRate   float64 `json:"openRate"`
+	Amount     float64 `json:"amount"`
+}
+
 // OpenPosition opens a new trading position on eToro
 func (c *Client) OpenPosition(req OpenPositionRequest) (*OpenPositionResponse, error) {
-	// TODO: Implement actual eToro order execution API
-	// This is a placeholder that returns a mock response for development
-	// In production, this would call: POST /api/v1/trade/positions
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/trade/positions", bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open position: %w", err)
+	}
+
+	var etoroResp etoroOpenPositionResponse
+	if err := json.Unmarshal(body, &etoroResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
 
 	return &OpenPositionResponse{
-		PositionID: uuid.New().String(),
+		PositionID: strconv.FormatInt(etoroResp.PositionID, 10),
 		Status:     "opened",
-		OpenRate:   req.Amount, // Mock: using amount as rate
+		OpenRate:   etoroResp.OpenRate,
 	}, nil
 }
 
@@ -257,21 +282,39 @@ type ClosePositionResponse struct {
 	PnL        float64 `json:"pnl"`
 }
 
+// etoroClosePositionResponse represents eToro's actual API response for closing
+type etoroClosePositionResponse struct {
+	PositionID int64   `json:"positionId"`
+	CloseRate  float64 `json:"closeRate"`
+	NetProfit  float64 `json:"netProfit"`
+}
+
 // ClosePosition closes an existing position on eToro
 func (c *Client) ClosePosition(positionID string) (*ClosePositionResponse, error) {
-	// TODO: Implement actual eToro position close API
-	// This is a placeholder that returns a mock response for development
-	// In production, this would call: DELETE /api/v1/trade/positions/{positionId}
+	httpReq, err := http.NewRequest("DELETE", c.baseURL+"/api/v1/trade/positions/"+positionID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to close position: %w", err)
+	}
+
+	var etoroResp etoroClosePositionResponse
+	if err := json.Unmarshal(body, &etoroResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
 
 	return &ClosePositionResponse{
 		PositionID: positionID,
 		Status:     "closed",
-		CloseRate:  0,
-		PnL:        0,
+		CloseRate:  etoroResp.CloseRate,
+		PnL:        etoroResp.NetProfit,
 	}, nil
 }
 
-// GetOpenPositionsResponse represents the response for open positions
+// EtoroPosition represents a position from eToro's API
 type EtoroPosition struct {
 	PositionID   string  `json:"positionId"`
 	InstrumentID int     `json:"instrumentId"`
@@ -282,11 +325,85 @@ type EtoroPosition struct {
 	IsBuy        bool    `json:"isBuy"`
 }
 
+// etoroPositionDto represents eToro's actual position data structure
+type etoroPositionDto struct {
+	PositionID   int64   `json:"positionId"`
+	InstrumentID int     `json:"instrumentId"`
+	Amount       float64 `json:"amount"`
+	OpenRate     float64 `json:"openRate"`
+	CurrentRate  float64 `json:"currentRate"`
+	NetProfit    float64 `json:"netProfit"`
+	IsBuy        bool    `json:"isBuy"`
+}
+
+// etoroPositionsResponse represents eToro's positions list response
+type etoroPositionsResponse struct {
+	Positions []etoroPositionDto `json:"positions"`
+}
+
 // GetOpenPositions fetches all open positions from eToro
 func (c *Client) GetOpenPositions() ([]EtoroPosition, error) {
-	// TODO: Implement actual eToro positions API
-	// This is a placeholder that returns empty for development
-	// In production, this would call: GET /api/v1/trade/positions
+	httpReq, err := http.NewRequest("GET", c.baseURL+"/api/v1/trade/positions", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 
-	return []EtoroPosition{}, nil
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	var etoroResp etoroPositionsResponse
+	if err := json.Unmarshal(body, &etoroResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	positions := make([]EtoroPosition, len(etoroResp.Positions))
+	for i, p := range etoroResp.Positions {
+		positions[i] = EtoroPosition{
+			PositionID:   strconv.FormatInt(p.PositionID, 10),
+			InstrumentID: p.InstrumentID,
+			Amount:       p.Amount,
+			OpenRate:     p.OpenRate,
+			CurrentRate:  p.CurrentRate,
+			PnL:          p.NetProfit,
+			IsBuy:        p.IsBuy,
+		}
+	}
+
+	return positions, nil
+}
+
+// GetInstrumentIDBySymbol looks up an eToro instrument ID by ticker symbol
+func (c *Client) GetInstrumentIDBySymbol(symbol string) (int, error) {
+	// Search for the instrument by symbol
+	httpReq, err := http.NewRequest("GET", c.baseURL+"/api/v1/market-data/instruments/search", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.URL.RawQuery = "query=" + symbol
+
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return 0, fmt.Errorf("failed to search instrument: %w", err)
+	}
+
+	var response InstrumentsResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return 0, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Find exact match by symbol
+	for _, inst := range response.InstrumentDisplayDatas {
+		if strings.EqualFold(inst.SymbolFull, symbol) || strings.EqualFold(inst.InstrumentDisplayName, symbol) {
+			return inst.InstrumentID, nil
+		}
+	}
+
+	// If no exact match, return the first result if available
+	if len(response.InstrumentDisplayDatas) > 0 {
+		return response.InstrumentDisplayDatas[0].InstrumentID, nil
+	}
+
+	return 0, fmt.Errorf("instrument not found for symbol: %s", symbol)
 }

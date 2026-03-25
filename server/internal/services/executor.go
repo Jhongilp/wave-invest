@@ -103,9 +103,17 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			continue
 		}
 
+		// Get eToro instrument ID for the ticker
+		instrumentID, err := e.etoroClient.GetInstrumentIDBySymbol(opp.TradingPlan.Ticker)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to get instrument ID for %s: %v", opp.TradingPlan.Ticker, err))
+			result.SkippedCount++
+			continue
+		}
+
 		// Execute trade on eToro
 		etoroReq := etoro.OpenPositionRequest{
-			InstrumentID:   0, // TODO: Map ticker to eToro instrument ID
+			InstrumentID:   instrumentID,
 			Amount:         positionValue,
 			IsBuy:          opp.TradingPlan.Trade.Bias == "bullish",
 			Leverage:       1,
@@ -195,8 +203,8 @@ func (e *Executor) ClosePosition(ctx context.Context, userID string, positionID 
 		return fmt.Errorf("failed to close eToro position: %w", err)
 	}
 
-	// Calculate P&L
-	pnl := (etoroResp.CloseRate - position.EntryPrice) * position.Quantity
+	// Use P&L from eToro response (includes all fees)
+	pnl := etoroResp.PnL
 
 	// Update position in Firestore
 	if err := e.positionService.ClosePosition(ctx, positionID, etoroResp.CloseRate, pnl); err != nil {
