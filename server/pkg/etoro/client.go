@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -15,21 +16,36 @@ import (
 	"wave_invest/internal/models"
 )
 
+var (
+	clientInstance *Client
+	clientOnce     sync.Once
+)
+
 type Client struct {
 	apiKey     string
 	userKey    string
 	baseURL    string
+	isDemo     bool
 	httpClient *http.Client
+	symbolToID map[string]int // Cache: symbol -> instrument ID
+	idToSymbol map[int]string // Cache: instrument ID -> symbol
 }
 
+// NewClient returns a singleton eToro client
 func NewClient() *Client {
-	cfg := config.Get()
-	return &Client{
-		apiKey:     cfg.EtoroAPIKey,
-		userKey:    cfg.EtoroAPISecret,
-		baseURL:    "https://public-api.etoro.com",
-		httpClient: &http.Client{},
-	}
+	clientOnce.Do(func() {
+		cfg := config.Get()
+		clientInstance = &Client{
+			apiKey:     cfg.EtoroAPIKey,
+			userKey:    cfg.EtoroAPISecret,
+			baseURL:    "https://public-api.etoro.com",
+			isDemo:     cfg.IsDemo(),
+			httpClient: &http.Client{},
+			symbolToID: make(map[string]int),
+			idToSymbol: make(map[int]string),
+		}
+	})
+	return clientInstance
 }
 
 // TickerData contains historical price and volume data
@@ -180,7 +196,7 @@ func (c *Client) GetWatchlist() ([]models.Ticker, error) {
 	// Fetch instrument metadata
 	instrumentMap, _ := c.GetInstrumentMetadata(instrumentIDs)
 
-	// Convert to Ticker models
+	// Convert to Ticker models and cache symbol-to-ID mappings
 	tickers := make([]models.Ticker, 0, len(instrumentIDs))
 	for _, item := range items {
 		if item.ItemType == "Instrument" {
@@ -192,10 +208,13 @@ func (c *Client) GetWatchlist() ([]models.Ticker, error) {
 				ChangePercent: 0,
 			}
 
-			// Use metadata if available
+			// Use metadata if available and cache the mapping
 			if inst, ok := instrumentMap[item.ItemID]; ok {
 				ticker.Symbol = inst.SymbolFull
 				ticker.Name = inst.InstrumentDisplayName
+				// Cache both directions
+				c.symbolToID[strings.ToUpper(inst.SymbolFull)] = item.ItemID
+				c.idToSymbol[item.ItemID] = inst.SymbolFull
 			}
 
 			tickers = append(tickers, ticker)
@@ -221,37 +240,69 @@ func (c *Client) GetTickerData(symbol string) (*TickerData, error) {
 }
 
 // OpenPositionRequest represents a request to open a new position
+// Uses PascalCase field names as required by eToro API
 type OpenPositionRequest struct {
-	InstrumentID   int     `json:"instrumentId"`
-	Amount         float64 `json:"amount"`
-	IsBuy          bool    `json:"isBuy"`
-	Leverage       int     `json:"leverage"`
-	StopLossRate   float64 `json:"stopLossRate,omitempty"`
-	TakeProfitRate float64 `json:"takeProfitRate,omitempty"`
+	InstrumentID   int     `json:"InstrumentID"`
+	Amount         float64 `json:"Amount"`
+	IsBuy          bool    `json:"IsBuy"`
+	Leverage       int     `json:"Leverage"`
+	StopLossRate   float64 `json:"StopLossRate,omitempty"`
+	TakeProfitRate float64 `json:"TakeProfitRate,omitempty"`
+	IsTslEnabled   bool    `json:"IsTslEnabled,omitempty"`
+	IsNoStopLoss   bool    `json:"IsNoStopLoss,omitempty"`
+	IsNoTakeProfit bool    `json:"IsNoTakeProfit,omitempty"`
 }
 
 // OpenPositionResponse represents the response from opening a position
 type OpenPositionResponse struct {
-	PositionID string  `json:"positionId"`
-	Status     string  `json:"status"`
-	OpenRate   float64 `json:"openRate"`
+	OrderID  int64   `json:"orderId"`
+	Token    string  `json:"token"`
+	Status   string  `json:"status"`
+	OpenRate float64 `json:"openRate"`
+}
+
+// etoroOrderForOpen represents the orderForOpen object in eToro's response
+type etoroOrderForOpen struct {
+	InstrumentID   int     `json:"instrumentID"`
+	Amount         float64 `json:"amount"`
+	IsBuy          bool    `json:"isBuy"`
+	Leverage       int     `json:"leverage"`
+	StopLossRate   float64 `json:"stopLossRate"`
+	TakeProfitRate float64 `json:"takeProfitRate"`
+	OrderID        int64   `json:"orderID"`
+	OrderType      int     `json:"orderType"`
+	StatusID       int     `json:"statusID"`
+	OpenDateTime   string  `json:"openDateTime"`
 }
 
 // etoroOpenPositionResponse represents eToro's actual API response
 type etoroOpenPositionResponse struct {
-	PositionID int64   `json:"positionId"`
-	OpenRate   float64 `json:"openRate"`
-	Amount     float64 `json:"amount"`
+	OrderForOpen etoroOrderForOpen `json:"orderForOpen"`
+	Token        string            `json:"token"`
 }
 
-// OpenPosition opens a new trading position on eToro
+// OpenPosition opens a new trading position on eToro using market order
 func (c *Client) OpenPosition(req OpenPositionRequest) (*OpenPositionResponse, error) {
+	// Set defaults for optional fields
+	if req.StopLossRate == 0 {
+		req.IsNoStopLoss = true
+	}
+	if req.TakeProfitRate == 0 {
+		req.IsNoTakeProfit = true
+	}
+
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/trade/positions", bytes.NewBuffer(payload))
+	// Use correct endpoint based on demo/real mode
+	endpoint := "/api/v1/trading/execution/market-open-orders/by-amount"
+	if c.isDemo {
+		endpoint = "/api/v1/trading/execution/demo/market-open-orders/by-amount"
+	}
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -268,15 +319,17 @@ func (c *Client) OpenPosition(req OpenPositionRequest) (*OpenPositionResponse, e
 	}
 
 	return &OpenPositionResponse{
-		PositionID: strconv.FormatInt(etoroResp.PositionID, 10),
-		Status:     "opened",
-		OpenRate:   etoroResp.OpenRate,
+		OrderID:  etoroResp.OrderForOpen.OrderID,
+		Token:    etoroResp.Token,
+		Status:   "opened",
+		OpenRate: 0, // Rate will be determined by market at execution
 	}, nil
 }
 
 // ClosePositionResponse represents the response from closing a position
 type ClosePositionResponse struct {
 	PositionID string  `json:"positionId"`
+	Token      string  `json:"token"`
 	Status     string  `json:"status"`
 	CloseRate  float64 `json:"closeRate"`
 	PnL        float64 `json:"pnl"`
@@ -284,14 +337,18 @@ type ClosePositionResponse struct {
 
 // etoroClosePositionResponse represents eToro's actual API response for closing
 type etoroClosePositionResponse struct {
-	PositionID int64   `json:"positionId"`
-	CloseRate  float64 `json:"closeRate"`
-	NetProfit  float64 `json:"netProfit"`
+	Token string `json:"token"`
 }
 
 // ClosePosition closes an existing position on eToro
 func (c *Client) ClosePosition(positionID string) (*ClosePositionResponse, error) {
-	httpReq, err := http.NewRequest("DELETE", c.baseURL+"/api/v1/trade/positions/"+positionID, nil)
+	// Use correct endpoint based on demo/real mode
+	endpoint := "/api/v1/trading/execution/positions/" + positionID
+	if c.isDemo {
+		endpoint = "/api/v1/trading/execution/demo/positions/" + positionID
+	}
+
+	httpReq, err := http.NewRequest("DELETE", c.baseURL+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -308,9 +365,10 @@ func (c *Client) ClosePosition(positionID string) (*ClosePositionResponse, error
 
 	return &ClosePositionResponse{
 		PositionID: positionID,
+		Token:      etoroResp.Token,
 		Status:     "closed",
-		CloseRate:  etoroResp.CloseRate,
-		PnL:        etoroResp.NetProfit,
+		CloseRate:  0, // Will need to fetch actual close rate from position details
+		PnL:        0,
 	}, nil
 }
 
@@ -343,7 +401,13 @@ type etoroPositionsResponse struct {
 
 // GetOpenPositions fetches all open positions from eToro
 func (c *Client) GetOpenPositions() ([]EtoroPosition, error) {
-	httpReq, err := http.NewRequest("GET", c.baseURL+"/api/v1/trade/positions", nil)
+	// Use correct endpoint based on demo/real mode
+	endpoint := "/api/v1/trading/execution/positions"
+	if c.isDemo {
+		endpoint = "/api/v1/trading/execution/demo/positions"
+	}
+
+	httpReq, err := http.NewRequest("GET", c.baseURL+endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -375,35 +439,25 @@ func (c *Client) GetOpenPositions() ([]EtoroPosition, error) {
 }
 
 // GetInstrumentIDBySymbol looks up an eToro instrument ID by ticker symbol
+// Uses cached mapping from GetWatchlist - the watchlist must be fetched first
 func (c *Client) GetInstrumentIDBySymbol(symbol string) (int, error) {
-	// Search for the instrument by symbol
-	httpReq, err := http.NewRequest("GET", c.baseURL+"/api/v1/market-data/instruments/search", nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create request: %w", err)
-	}
-	httpReq.URL.RawQuery = "query=" + symbol
-
-	body, err := c.doRequest(httpReq)
-	if err != nil {
-		return 0, fmt.Errorf("failed to search instrument: %w", err)
+	// Look up in cache (uppercase for case-insensitive match)
+	upperSymbol := strings.ToUpper(symbol)
+	if id, ok := c.symbolToID[upperSymbol]; ok {
+		return id, nil
 	}
 
-	var response InstrumentsResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return 0, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Find exact match by symbol
-	for _, inst := range response.InstrumentDisplayDatas {
-		if strings.EqualFold(inst.SymbolFull, symbol) || strings.EqualFold(inst.InstrumentDisplayName, symbol) {
-			return inst.InstrumentID, nil
+	// If not in cache, try to refresh the watchlist to populate the cache
+	if len(c.symbolToID) == 0 {
+		_, err := c.GetWatchlist()
+		if err != nil {
+			return 0, fmt.Errorf("failed to load watchlist for symbol lookup: %w", err)
+		}
+		// Try again after loading
+		if id, ok := c.symbolToID[upperSymbol]; ok {
+			return id, nil
 		}
 	}
 
-	// If no exact match, return the first result if available
-	if len(response.InstrumentDisplayDatas) > 0 {
-		return response.InstrumentDisplayDatas[0].InstrumentID, nil
-	}
-
-	return 0, fmt.Errorf("instrument not found for symbol: %s", symbol)
+	return 0, fmt.Errorf("instrument not found for symbol: %s (not in watchlist)", symbol)
 }

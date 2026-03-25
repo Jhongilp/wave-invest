@@ -137,7 +137,7 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			StopLoss:   opp.TradingPlan.Trade.StopLoss,
 			TakeProfit: opp.TradingPlan.Trade.Targets.PT1,
 			Status:     "open",
-			EtoroID:    etoroResp.PositionID,
+			EtoroID:    fmt.Sprintf("%d", etoroResp.OrderID),
 			OpenedAt:   time.Now(),
 		}
 
