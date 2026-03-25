@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 
+	"wave_invest/config"
 	"wave_invest/internal/handlers"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +18,10 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
 	}
+
+	// Initialize configuration (must be called after loading .env)
+	cfg := config.Load()
+	log.Printf("Trading mode: %s", cfg.TradingMode)
 
 	r := chi.NewRouter()
 
@@ -62,13 +66,8 @@ func main() {
 		r.Get("/transactions", handlers.GetTransactions)
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Server starting on port %s", port)
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	log.Printf("Server starting on port %s", cfg.Port)
+	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
 		log.Fatal(err)
 	}
 }

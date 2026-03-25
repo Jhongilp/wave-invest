@@ -11,6 +11,8 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // PortfolioService handles portfolio operations in Firestore
@@ -25,10 +27,14 @@ func NewPortfolioService() *PortfolioService {
 	}
 }
 
-// GetPortfolio retrieves a user's portfolio
+// GetPortfolio retrieves a user's portfolio, creating a default one if it doesn't exist
 func (s *PortfolioService) GetPortfolio(ctx context.Context, userID string) (*models.Portfolio, error) {
 	doc, err := s.client.Collection(fs.CollectionPortfolios).Doc(userID).Get(ctx)
 	if err != nil {
+		// Auto-create a default portfolio if not found
+		if status.Code(err) == codes.NotFound {
+			return s.CreatePortfolio(ctx, userID, 0)
+		}
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 

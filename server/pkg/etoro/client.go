@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 
+	"wave_invest/config"
 	"wave_invest/internal/models"
 )
 
@@ -22,9 +22,10 @@ type Client struct {
 }
 
 func NewClient() *Client {
+	cfg := config.Get()
 	return &Client{
-		apiKey:     os.Getenv("ETORO_API_KEY"),
-		userKey:    os.Getenv("ETORO_API_SECRET"),
+		apiKey:     cfg.EtoroAPIKey,
+		userKey:    cfg.EtoroAPISecret,
 		baseURL:    "https://public-api.etoro.com",
 		httpClient: &http.Client{},
 	}
