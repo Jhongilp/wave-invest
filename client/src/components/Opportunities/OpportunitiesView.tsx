@@ -79,8 +79,10 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
     analysisResult,
     executionResult,
     loading,
+    initialLoading,
     executing,
     error,
+    lastAnalysisDate,
     runDailyAnalysis,
     executeTrades,
   } = useOpportunities();
@@ -91,14 +93,35 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
     }
   };
 
+  const hasExistingData = opportunities.length > 0;
+  const today = new Date().toISOString().split('T')[0];
+  const isStale = lastAnalysisDate && lastAnalysisDate !== today;
+
+  if (initialLoading) {
+    return (
+      <div className="p-6">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading opportunities...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Opportunities</h1>
-          {analysisResult && (
+          {lastAnalysisDate && (
             <p className="text-gray-400 text-sm">
-              {analysisResult.analyzedCount} tickers analyzed on {analysisResult.date}
+              {opportunities.length} opportunities from {lastAnalysisDate}
+              {isStale && <span className="text-yellow-400 ml-2">(stale - not from today)</span>}
+            </p>
+          )}
+          {analysisResult && (
+            <p className="text-gray-500 text-xs mt-1">
+              {analysisResult.analyzedCount} tickers analyzed
             </p>
           )}
         </div>
@@ -108,7 +131,7 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
             disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
           >
-            {loading ? 'Analyzing...' : 'Run Daily Analysis'}
+            {loading ? 'Analyzing...' : hasExistingData ? 'Refresh Analysis' : 'Run Daily Analysis'}
           </button>
           {opportunities.length > 0 && (
             <button

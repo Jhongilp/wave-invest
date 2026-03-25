@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"wave_invest/internal/models"
@@ -207,7 +208,6 @@ func (s *AnalysisService) SaveAnalysis(ctx context.Context, analysis models.Dail
 func (s *AnalysisService) GetAnalysisByDate(ctx context.Context, date string) ([]models.DailyAnalysis, error) {
 	iter := s.client.Collection(fs.CollectionAnalysis).
 		Where("date", "==", date).
-		OrderBy("score", firestore.Desc).
 		Documents(ctx)
 
 	var analyses []models.DailyAnalysis
@@ -226,6 +226,11 @@ func (s *AnalysisService) GetAnalysisByDate(ctx context.Context, date string) ([
 		}
 		analyses = append(analyses, analysis)
 	}
+
+	// Sort by score descending (avoids needing a Firestore composite index)
+	sort.Slice(analyses, func(i, j int) bool {
+		return analyses[i].Score > analyses[j].Score
+	})
 
 	return analyses, nil
 }

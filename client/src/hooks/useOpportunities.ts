@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { fetchApi } from '../lib/api';
 import type { DailyAnalysisResult, ScoredOpportunity, ExecutionResult } from '../types';
 
@@ -7,8 +7,10 @@ export function useOpportunities() {
   const [analysisResult, setAnalysisResult] = useState<DailyAnalysisResult | null>(null);
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastAnalysisDate, setLastAnalysisDate] = useState<string | null>(null);
 
   const runDailyAnalysis = useCallback(async () => {
     setLoading(true);
@@ -19,6 +21,7 @@ export function useOpportunities() {
       });
       setAnalysisResult(result);
       setOpportunities(result.opportunities);
+      setLastAnalysisDate(result.date);
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to run daily analysis';
@@ -36,6 +39,11 @@ export function useOpportunities() {
       const endpoint = date ? `/api/opportunities/${date}` : '/api/opportunities';
       const data = await fetchApi<ScoredOpportunity[]>(endpoint);
       setOpportunities(data);
+      // Get date from first opportunity or use provided date
+      if (data.length > 0) {
+        const analysisDate = date || new Date().toISOString().split('T')[0];
+        setLastAnalysisDate(analysisDate);
+      }
       return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch opportunities';
@@ -44,6 +52,24 @@ export function useOpportunities() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Auto-fetch today's opportunities on mount
+  useEffect(() => {
+    const loadPersistedData = async () => {
+      try {
+        const data = await fetchApi<ScoredOpportunity[]>('/api/opportunities');
+        setOpportunities(data);
+        if (data.length > 0) {
+          setLastAnalysisDate(new Date().toISOString().split('T')[0]);
+        }
+      } catch {
+        // No persisted data for today, that's ok
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    loadPersistedData();
   }, []);
 
   const executeTrades = useCallback(async () => {
@@ -69,8 +95,10 @@ export function useOpportunities() {
     analysisResult,
     executionResult,
     loading,
+    initialLoading,
     executing,
     error,
+    lastAnalysisDate,
     runDailyAnalysis,
     fetchOpportunities,
     executeTrades,
