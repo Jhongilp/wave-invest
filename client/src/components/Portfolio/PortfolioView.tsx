@@ -23,10 +23,9 @@ function formatDate(dateString: string): string {
 
 interface PositionRowProps {
   position: Position;
-  onClose: (positionId: string) => void;
 }
 
-function PositionRow({ position, onClose }: PositionRowProps) {
+function PositionRow({ position }: PositionRowProps) {
   const positionValue = position.entryPrice * position.quantity;
   
   return (
@@ -37,14 +36,6 @@ function PositionRow({ position, onClose }: PositionRowProps) {
       <td className="py-3 px-4 text-gray-300">{formatCurrency(positionValue)}</td>
       <td className="py-3 px-4 text-red-400">{formatCurrency(position.stopLoss)}</td>
       <td className="py-3 px-4 text-green-400">{formatCurrency(position.takeProfit)}</td>
-      <td className="py-3 px-4">
-        <button
-          onClick={() => onClose(position.id)}
-          className="text-red-400 hover:text-red-300 text-sm"
-        >
-          Close
-        </button>
-      </td>
     </tr>
   );
 }
@@ -82,7 +73,6 @@ export function PortfolioView() {
     loading,
     error,
     createPortfolio,
-    closePosition,
     fetchPortfolio,
     fetchEtoroPortfolio,
     syncPositions,
@@ -289,7 +279,6 @@ export function PortfolioView() {
                 <th className="py-2 px-4">Value</th>
                 <th className="py-2 px-4">Stop Loss</th>
                 <th className="py-2 px-4">Take Profit</th>
-                <th className="py-2 px-4">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -297,7 +286,6 @@ export function PortfolioView() {
                 <PositionRow
                   key={position.id}
                   position={position}
-                  onClose={closePosition}
                 />
               ))}
             </tbody>
