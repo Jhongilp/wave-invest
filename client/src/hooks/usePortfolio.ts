@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { fetchApi } from '../lib/api';
-import type { PortfolioSummary, Position, Transaction } from '../types';
+import type { PortfolioSummary, Position, Transaction, EtoroPortfolio, SyncPositionsResult } from '../types';
 
 export function usePortfolio() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [etoroPortfolio, setEtoroPortfolio] = useState<EtoroPortfolio | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,6 +84,42 @@ export function usePortfolio() {
     }
   }, []);
 
+  const fetchEtoroPortfolio = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchApi<EtoroPortfolio>('/api/etoro/portfolio');
+      setEtoroPortfolio(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch eToro portfolio';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const syncPositions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchApi<SyncPositionsResult>('/api/positions/sync', {
+        method: 'POST',
+      });
+      // Refresh positions after sync
+      await fetchPositions();
+      await fetchPortfolio();
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to sync positions';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchPositions, fetchPortfolio]);
+
   // Fetch portfolio on mount
   useEffect(() => {
     fetchPortfolio().catch(() => {});
@@ -92,6 +129,7 @@ export function usePortfolio() {
     portfolio,
     positions,
     transactions,
+    etoroPortfolio,
     loading,
     error,
     fetchPortfolio,
@@ -99,5 +137,7 @@ export function usePortfolio() {
     fetchPositions,
     closePosition,
     fetchTransactions,
+    fetchEtoroPortfolio,
+    syncPositions,
   };
 }

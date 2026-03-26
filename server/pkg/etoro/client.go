@@ -438,6 +438,70 @@ func (c *Client) GetOpenPositions() ([]EtoroPosition, error) {
 	return positions, nil
 }
 
+// PortfolioPosition represents a position in the eToro portfolio response
+type PortfolioPosition struct {
+	PositionID     int64   `json:"positionID"`
+	OrderID        int64   `json:"orderID"`
+	InstrumentID   int     `json:"instrumentID"`
+	OpenRate       float64 `json:"openRate"`
+	Amount         float64 `json:"amount"`
+	Units          float64 `json:"units"`
+	IsBuy          bool    `json:"isBuy"`
+	Leverage       int     `json:"leverage"`
+	StopLossRate   float64 `json:"stopLossRate"`
+	TakeProfitRate float64 `json:"takeProfitRate"`
+	OpenDateTime   string  `json:"openDateTime"`
+}
+
+// etoroPortfolioResponse represents eToro's portfolio API response
+type etoroPortfolioResponse struct {
+	ClientPortfolio struct {
+		Positions []PortfolioPosition `json:"positions"`
+		Credit    float64             `json:"credit"`
+	} `json:"clientPortfolio"`
+}
+
+// GetPortfolio fetches the complete portfolio from eToro including all positions with their actual rates
+func (c *Client) GetPortfolio() ([]PortfolioPosition, error) {
+	endpoint := "/api/v1/trading/info/portfolio"
+	if c.isDemo {
+		endpoint = "/api/v1/trading/info/demo/portfolio"
+	}
+
+	httpReq, err := http.NewRequest("GET", c.baseURL+endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get portfolio: %w", err)
+	}
+
+	var etoroResp etoroPortfolioResponse
+	if err := json.Unmarshal(body, &etoroResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return etoroResp.ClientPortfolio.Positions, nil
+}
+
+// GetPositionByOrderID finds a position in the portfolio by its order ID
+func (c *Client) GetPositionByOrderID(orderID int64) (*PortfolioPosition, error) {
+	positions, err := c.GetPortfolio()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range positions {
+		if p.OrderID == orderID {
+			return &p, nil
+		}
+	}
+
+	return nil, fmt.Errorf("position with order ID %d not found", orderID)
+}
+
 // GetInstrumentIDBySymbol looks up an eToro instrument ID by ticker symbol
 // Uses cached mapping from GetWatchlist - the watchlist must be fetched first
 func (c *Client) GetInstrumentIDBySymbol(symbol string) (int, error) {

@@ -127,17 +127,31 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			continue
 		}
 
-		// Create position record
+		// Fetch actual position details from eToro to get the real entry price
+		actualEntryPrice := entryPrice // Default to estimated price
+		actualUnits := quantity        // Default to calculated quantity
+		var etoroPositionID int64
+
+		portfolioPos, err := e.etoroClient.GetPositionByOrderID(etoroResp.OrderID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("warning: could not fetch actual entry price for %s: %v", opp.TradingPlan.Ticker, err))
+		} else {
+			actualEntryPrice = portfolioPos.OpenRate
+			actualUnits = portfolioPos.Units
+			etoroPositionID = portfolioPos.PositionID
+		}
+
+		// Create position record with actual values from eToro
 		position := models.Position{
 			ID:         uuid.New().String(),
 			UserID:     userID,
 			Ticker:     opp.TradingPlan.Ticker,
-			EntryPrice: entryPrice,
-			Quantity:   quantity,
+			EntryPrice: actualEntryPrice,
+			Quantity:   actualUnits,
 			StopLoss:   opp.TradingPlan.Trade.StopLoss,
 			TakeProfit: opp.TradingPlan.Trade.Targets.PT1,
 			Status:     "open",
-			EtoroID:    fmt.Sprintf("%d", etoroResp.OrderID),
+			EtoroID:    fmt.Sprintf("%d", etoroPositionID),
 			OpenedAt:   time.Now(),
 		}
 
@@ -147,22 +161,23 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			continue
 		}
 
-		// Log transaction
+		// Log transaction with actual values
+		actualTotal := actualEntryPrice * actualUnits
 		tx := models.Transaction{
 			ID:        uuid.New().String(),
 			UserID:    userID,
 			Type:      "BUY",
 			Ticker:    opp.TradingPlan.Ticker,
-			Price:     entryPrice,
-			Quantity:  quantity,
-			Total:     positionValue,
+			Price:     actualEntryPrice,
+			Quantity:  actualUnits,
+			Total:     actualTotal,
 			Timestamp: time.Now(),
 		}
 		if err := e.txService.LogTransaction(ctx, tx); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to log transaction for %s: %v", opp.TradingPlan.Ticker, err))
 		}
 
-		// Update portfolio balance
+		// Update portfolio balance (use the amount we actually spent)
 		newBalance := portfolio.AvailableBalance - positionValue
 		if err := e.portfolioService.UpdateBalance(ctx, userID, newBalance); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to update balance: %v", err))

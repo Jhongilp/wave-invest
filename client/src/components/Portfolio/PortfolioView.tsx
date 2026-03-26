@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { usePortfolio } from '../../hooks';
-import type { Position } from '../../types';
+import type { Position, EtoroPortfolioPosition, SyncPositionsResult } from '../../types';
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -11,6 +11,14 @@ function formatCurrency(value: number): string {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 interface PositionRowProps {
@@ -41,19 +49,49 @@ function PositionRow({ position, onClose }: PositionRowProps) {
   );
 }
 
+interface EtoroPositionRowProps {
+  position: EtoroPortfolioPosition;
+}
+
+function EtoroPositionRow({ position }: EtoroPositionRowProps) {
+  const value = position.amount;
+  
+  return (
+    <tr className="border-b border-gray-700">
+      <td className="py-3 px-4 text-white font-medium">{position.symbol}</td>
+      <td className="py-3 px-4 text-gray-300">{formatCurrency(position.openRate)}</td>
+      <td className="py-3 px-4 text-gray-300">{position.units.toFixed(4)}</td>
+      <td className="py-3 px-4 text-gray-300">{formatCurrency(value)}</td>
+      <td className="py-3 px-4 text-gray-300">{position.leverage}x</td>
+      <td className="py-3 px-4 text-red-400">
+        {position.stopLossRate > 0 ? formatCurrency(position.stopLossRate) : '-'}
+      </td>
+      <td className="py-3 px-4 text-green-400">
+        {position.takeProfitRate > 0 ? formatCurrency(position.takeProfitRate) : '-'}
+      </td>
+      <td className="py-3 px-4 text-gray-400 text-sm">{formatDate(position.openDateTime)}</td>
+    </tr>
+  );
+}
+
 export function PortfolioView() {
   const {
     portfolio,
     positions,
+    etoroPortfolio,
     loading,
     error,
     createPortfolio,
     closePosition,
     fetchPortfolio,
+    fetchEtoroPortfolio,
+    syncPositions,
   } = usePortfolio();
 
   const [budgetInput, setBudgetInput] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEtoroPortfolio, setShowEtoroPortfolio] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncPositionsResult | null>(null);
 
   const handleCreatePortfolio = async () => {
     const budget = parseFloat(budgetInput);
@@ -61,6 +99,21 @@ export function PortfolioView() {
       await createPortfolio(budget);
       setShowCreateForm(false);
       setBudgetInput('');
+    }
+  };
+
+  const handleFetchEtoroPortfolio = async () => {
+    setSyncResult(null);
+    await fetchEtoroPortfolio();
+    setShowEtoroPortfolio(true);
+  };
+
+  const handleSyncPositions = async () => {
+    try {
+      const result = await syncPositions();
+      setSyncResult(result);
+    } catch {
+      // Error handled by hook
     }
   };
 
@@ -127,17 +180,44 @@ export function PortfolioView() {
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Portfolio</h1>
-        <button
-          onClick={() => fetchPortfolio()}
-          className="text-gray-400 hover:text-white text-sm"
-        >
-          Refresh
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleFetchEtoroPortfolio}
+            disabled={loading}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {loading ? 'Loading...' : 'Fetch eToro Portfolio'}
+          </button>
+          <button
+            onClick={handleSyncPositions}
+            disabled={loading}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {loading ? 'Syncing...' : 'Sync Positions'}
+          </button>
+          <button
+            onClick={() => fetchPortfolio()}
+            className="text-gray-400 hover:text-white text-sm"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-6">
           {error}
+        </div>
+      )}
+
+      {syncResult && (
+        <div className="bg-blue-900/50 border border-blue-500 text-blue-200 px-4 py-3 rounded-lg mb-6">
+          <p>
+            Sync completed: {syncResult.syncedCount} synced, {syncResult.skippedCount} skipped
+            {syncResult.errors && syncResult.errors.length > 0 && (
+              <span className="text-yellow-400 ml-2">({syncResult.errors.length} errors)</span>
+            )}
+          </p>
         </div>
       )}
 
@@ -224,6 +304,53 @@ export function PortfolioView() {
           </table>
         )}
       </div>
+
+      {/* eToro Portfolio */}
+      {showEtoroPortfolio && etoroPortfolio && (
+        <div className="bg-gray-800 rounded-lg overflow-hidden mt-8">
+          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+            <h3 className="text-lg font-medium text-white">
+              eToro Portfolio ({etoroPortfolio.positions.length} positions)
+            </h3>
+            <button
+              onClick={() => setShowEtoroPortfolio(false)}
+              className="text-gray-400 hover:text-white text-sm"
+            >
+              Hide
+            </button>
+          </div>
+          {etoroPortfolio.positions.length === 0 ? (
+            <div className="px-4 py-8 text-center text-gray-400">
+              No positions in eToro portfolio
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-750">
+                  <tr className="text-left text-gray-400 text-sm">
+                    <th className="py-2 px-4">Symbol</th>
+                    <th className="py-2 px-4">Open Rate</th>
+                    <th className="py-2 px-4">Units</th>
+                    <th className="py-2 px-4">Amount</th>
+                    <th className="py-2 px-4">Leverage</th>
+                    <th className="py-2 px-4">Stop Loss</th>
+                    <th className="py-2 px-4">Take Profit</th>
+                    <th className="py-2 px-4">Opened</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {etoroPortfolio.positions.map((position) => (
+                    <EtoroPositionRow
+                      key={position.positionId}
+                      position={position}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

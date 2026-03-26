@@ -63,7 +63,11 @@ func main() {
 		r.Post("/execute-trades", handlers.ExecuteTrades)
 		r.Get("/positions", handlers.GetPositions)
 		r.Delete("/positions/{id}", handlers.ClosePosition)
+		r.Post("/positions/sync", handlers.SyncPositions)
 		r.Get("/transactions", handlers.GetTransactions)
+
+		// eToro Integration
+		r.Get("/etoro/portfolio", handlers.GetEtoroPortfolio)
 	})
 
 	log.Printf("Server starting on port %s", cfg.Port)

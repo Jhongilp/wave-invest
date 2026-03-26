@@ -91,3 +91,29 @@ export const DEFAULT_TRADING_RULES: TradingRules = {
   minScoreThreshold: 60,
   dailyLossLimit: 0.10,
 };
+
+// eToro Portfolio Types
+export interface EtoroPortfolioPosition {
+  positionId: string;
+  orderId: number;
+  symbol: string;
+  instrumentId: number;
+  openRate: number;
+  amount: number;
+  units: number;
+  isBuy: boolean;
+  leverage: number;
+  stopLossRate: number;
+  takeProfitRate: number;
+  openDateTime: string;
+}
+
+export interface EtoroPortfolio {
+  positions: EtoroPortfolioPosition[];
+}
+
+export interface SyncPositionsResult {
+  syncedCount: number;
+  skippedCount: number;
+  errors?: string[];
+}

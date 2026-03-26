@@ -146,6 +146,16 @@ func (s *PositionService) ClosePosition(ctx context.Context, positionID string, 
 	return err
 }
 
+// UpdatePosition updates an existing position in Firestore
+func (s *PositionService) UpdatePosition(ctx context.Context, userID string, position *models.Position) error {
+	_, err := s.client.Collection(fs.CollectionPositions).Doc(position.ID).Update(ctx, []firestore.Update{
+		{Path: "entryPrice", Value: position.EntryPrice},
+		{Path: "quantity", Value: position.Quantity},
+		{Path: "etoroId", Value: position.EtoroID},
+	})
+	return err
+}
+
 // TransactionService handles transaction logging in Firestore
 type TransactionService struct {
 	client *firestore.Client
