@@ -116,5 +116,14 @@ export interface EtoroPortfolio {
 export interface SyncPositionsResult {
   syncedCount: number;
   skippedCount: number;
+  orphanedPositions?: Position[];
   errors?: string[];
+}
+
+export interface ReconcilePositionsResult {
+  reconciledCount: number;
+  skippedCount: number;
+  closedPositions?: Position[];
+  errors?: string[];
+  isDemo: boolean;
 }

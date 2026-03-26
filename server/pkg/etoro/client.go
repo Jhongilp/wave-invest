@@ -534,3 +534,60 @@ func (c *Client) GetInstrumentIDBySymbol(symbol string) (int, error) {
 
 	return 0, fmt.Errorf("instrument not found for symbol: %s (not in watchlist)", symbol)
 }
+
+// TradeHistoryItem represents a closed trade from eToro's trading history
+type TradeHistoryItem struct {
+	PositionID        int64   `json:"positionId"`
+	OrderID           int64   `json:"orderId"`
+	InstrumentID      int     `json:"instrumentId"`
+	IsBuy             bool    `json:"isBuy"`
+	Leverage          int     `json:"leverage"`
+	OpenRate          float64 `json:"openRate"`
+	OpenTimestamp     string  `json:"openTimestamp"`
+	CloseRate         float64 `json:"closeRate"`
+	CloseTimestamp    string  `json:"closeTimestamp"`
+	NetProfit         float64 `json:"netProfit"`
+	StopLossRate      float64 `json:"stopLossRate"`
+	TakeProfitRate    float64 `json:"takeProfitRate"`
+	TrailingStopLoss  bool    `json:"trailingStopLoss"`
+	Investment        float64 `json:"investment"`
+	InitialInvestment float64 `json:"initialInvestment"`
+	Fees              float64 `json:"fees"`
+	Units             float64 `json:"units"`
+}
+
+// GetTradingHistory fetches closed trades from eToro (real account only)
+func (c *Client) GetTradingHistory(minDate string) ([]TradeHistoryItem, error) {
+	if c.isDemo {
+		return nil, fmt.Errorf("trading history is only available for real accounts")
+	}
+
+	endpoint := "/api/v1/trading/info/trade/history"
+
+	httpReq, err := http.NewRequest("GET", c.baseURL+endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	q := httpReq.URL.Query()
+	q.Add("minDate", minDate)
+	q.Add("pageSize", "100")
+	httpReq.URL.RawQuery = q.Encode()
+
+	body, err := c.doRequest(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trading history: %w", err)
+	}
+
+	var history []TradeHistoryItem
+	if err := json.Unmarshal(body, &history); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return history, nil
+}
+
+// IsDemo returns whether the client is in demo mode
+func (c *Client) IsDemo() bool {
+	return c.isDemo
+}

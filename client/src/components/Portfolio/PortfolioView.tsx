@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePortfolio } from '../../hooks';
-import type { Position, EtoroPortfolioPosition, SyncPositionsResult } from '../../types';
+import type { Position, EtoroPortfolioPosition, SyncPositionsResult, ReconcilePositionsResult } from '../../types';
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -14,6 +14,7 @@ function formatPercent(value: number): string {
 }
 
 function formatDate(dateString: string): string {
+  if (!dateString) return '-';
   return new Date(dateString).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -23,19 +24,45 @@ function formatDate(dateString: string): string {
 
 interface PositionRowProps {
   position: Position;
+  isOrphaned?: boolean;
 }
 
-function PositionRow({ position }: PositionRowProps) {
+function PositionRow({ position, isOrphaned }: PositionRowProps) {
   const positionValue = position.entryPrice * position.quantity;
   
   return (
-    <tr className="border-b border-gray-700">
-      <td className="py-3 px-4 text-white font-medium">{position.ticker}</td>
+    <tr className={`border-b border-gray-700 ${isOrphaned ? 'bg-yellow-900/30' : ''}`}>
+      <td className="py-3 px-4 text-white font-medium">
+        {position.ticker}
+        {isOrphaned && <span className="ml-2 text-xs text-yellow-400">(Not in eToro)</span>}
+      </td>
       <td className="py-3 px-4 text-gray-300">{formatCurrency(position.entryPrice)}</td>
       <td className="py-3 px-4 text-gray-300">{position.quantity.toFixed(2)}</td>
       <td className="py-3 px-4 text-gray-300">{formatCurrency(positionValue)}</td>
       <td className="py-3 px-4 text-red-400">{formatCurrency(position.stopLoss)}</td>
       <td className="py-3 px-4 text-green-400">{formatCurrency(position.takeProfit)}</td>
+    </tr>
+  );
+}
+
+interface ClosedPositionRowProps {
+  position: Position;
+}
+
+function ClosedPositionRow({ position }: ClosedPositionRowProps) {
+  const isProfitable = (position.realizedPnl || 0) >= 0;
+  
+  return (
+    <tr className="border-b border-gray-700">
+      <td className="py-3 px-4 text-white font-medium">{position.ticker}</td>
+      <td className="py-3 px-4 text-gray-300">{formatCurrency(position.entryPrice)}</td>
+      <td className="py-3 px-4 text-gray-300">{formatCurrency(position.closePrice || 0)}</td>
+      <td className="py-3 px-4 text-gray-300">{position.quantity.toFixed(2)}</td>
+      <td className={`py-3 px-4 font-medium ${isProfitable ? 'text-green-400' : 'text-red-400'}`}>
+        {formatCurrency(position.realizedPnl || 0)}
+      </td>
+      <td className="py-3 px-4 text-gray-400 text-sm">{formatDate(position.openedAt)}</td>
+      <td className="py-3 px-4 text-gray-400 text-sm">{formatDate(position.closedAt || '')}</td>
     </tr>
   );
 }
@@ -69,19 +96,30 @@ export function PortfolioView() {
   const {
     portfolio,
     positions,
+    closedPositions,
     etoroPortfolio,
     loading,
     error,
     createPortfolio,
     fetchPortfolio,
+    fetchClosedPositions,
     fetchEtoroPortfolio,
     syncPositions,
+    reconcilePositions,
   } = usePortfolio();
 
   const [budgetInput, setBudgetInput] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEtoroPortfolio, setShowEtoroPortfolio] = useState(false);
+  const [showTradingHistory, setShowTradingHistory] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncPositionsResult | null>(null);
+  const [reconcileResult, setReconcileResult] = useState<ReconcilePositionsResult | null>(null);
+  const [orphanedTickers, setOrphanedTickers] = useState<Set<string>>(new Set());
+
+  // Fetch closed positions on mount
+  useEffect(() => {
+    fetchClosedPositions().catch(() => {});
+  }, [fetchClosedPositions]);
 
   const handleCreatePortfolio = async () => {
     const budget = parseFloat(budgetInput);
@@ -94,14 +132,37 @@ export function PortfolioView() {
 
   const handleFetchEtoroPortfolio = async () => {
     setSyncResult(null);
+    setReconcileResult(null);
     await fetchEtoroPortfolio();
     setShowEtoroPortfolio(true);
   };
 
   const handleSyncPositions = async () => {
     try {
+      setReconcileResult(null);
       const result = await syncPositions();
       setSyncResult(result);
+      // Track orphaned positions
+      if (result.orphanedPositions && result.orphanedPositions.length > 0) {
+        setOrphanedTickers(new Set(result.orphanedPositions.map(p => p.ticker)));
+      } else {
+        setOrphanedTickers(new Set());
+      }
+    } catch {
+      // Error handled by hook
+    }
+  };
+
+  const handleReconcilePositions = async () => {
+    try {
+      setSyncResult(null);
+      const result = await reconcilePositions();
+      setReconcileResult(result);
+      setOrphanedTickers(new Set()); // Clear orphaned after reconcile
+      // Show trading history if we closed any positions
+      if (result.closedPositions && result.closedPositions.length > 0) {
+        setShowTradingHistory(true);
+      }
     } catch {
       // Error handled by hook
     }
@@ -176,7 +237,7 @@ export function PortfolioView() {
             disabled={loading}
             className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
           >
-            {loading ? 'Loading...' : 'Fetch eToro Portfolio'}
+            {loading ? 'Loading...' : 'Fetch eToro'}
           </button>
           <button
             onClick={handleSyncPositions}
@@ -186,7 +247,14 @@ export function PortfolioView() {
             {loading ? 'Syncing...' : 'Sync Positions'}
           </button>
           <button
-            onClick={() => fetchPortfolio()}
+            onClick={handleReconcilePositions}
+            disabled={loading}
+            className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {loading ? 'Reconciling...' : 'Reconcile'}
+          </button>
+          <button
+            onClick={() => { fetchPortfolio(); fetchClosedPositions(); }}
             className="text-gray-400 hover:text-white text-sm"
           >
             Refresh
@@ -204,8 +272,25 @@ export function PortfolioView() {
         <div className="bg-blue-900/50 border border-blue-500 text-blue-200 px-4 py-3 rounded-lg mb-6">
           <p>
             Sync completed: {syncResult.syncedCount} synced, {syncResult.skippedCount} skipped
+            {syncResult.orphanedPositions && syncResult.orphanedPositions.length > 0 && (
+              <span className="text-yellow-400 ml-2">
+                ({syncResult.orphanedPositions.length} orphaned - click Reconcile to close)
+              </span>
+            )}
             {syncResult.errors && syncResult.errors.length > 0 && (
-              <span className="text-yellow-400 ml-2">({syncResult.errors.length} errors)</span>
+              <span className="text-red-400 ml-2">({syncResult.errors.length} errors)</span>
+            )}
+          </p>
+        </div>
+      )}
+
+      {reconcileResult && (
+        <div className="bg-orange-900/50 border border-orange-500 text-orange-200 px-4 py-3 rounded-lg mb-6">
+          <p>
+            Reconcile completed: {reconcileResult.reconciledCount} closed
+            {reconcileResult.isDemo && <span className="text-gray-400 ml-2">(Demo mode - no P&L data)</span>}
+            {reconcileResult.errors && reconcileResult.errors.length > 0 && (
+              <span className="text-red-400 ml-2">({reconcileResult.errors.length} errors)</span>
             )}
           </p>
         </div>
@@ -263,6 +348,11 @@ export function PortfolioView() {
         <div className="px-4 py-3 border-b border-gray-700">
           <h3 className="text-lg font-medium text-white">
             Open Positions ({positions.length})
+            {orphanedTickers.size > 0 && (
+              <span className="ml-2 text-sm text-yellow-400">
+                ({orphanedTickers.size} orphaned)
+              </span>
+            )}
           </h3>
         </div>
         {positions.length === 0 ? (
@@ -286,6 +376,7 @@ export function PortfolioView() {
                 <PositionRow
                   key={position.id}
                   position={position}
+                  isOrphaned={orphanedTickers.has(position.ticker)}
                 />
               ))}
             </tbody>
@@ -339,6 +430,54 @@ export function PortfolioView() {
           )}
         </div>
       )}
+
+      {/* Trading History */}
+      <div className="bg-gray-800 rounded-lg overflow-hidden mt-8">
+        <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+          <h3 className="text-lg font-medium text-white">
+            Trading History ({closedPositions.length} closed)
+          </h3>
+          <button
+            onClick={() => setShowTradingHistory(!showTradingHistory)}
+            className="text-gray-400 hover:text-white text-sm"
+          >
+            {showTradingHistory ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {showTradingHistory && (
+          <>
+            {closedPositions.length === 0 ? (
+              <div className="px-4 py-8 text-center text-gray-400">
+                No closed positions
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-750">
+                    <tr className="text-left text-gray-400 text-sm">
+                      <th className="py-2 px-4">Ticker</th>
+                      <th className="py-2 px-4">Entry Price</th>
+                      <th className="py-2 px-4">Close Price</th>
+                      <th className="py-2 px-4">Quantity</th>
+                      <th className="py-2 px-4">P&L</th>
+                      <th className="py-2 px-4">Opened</th>
+                      <th className="py-2 px-4">Closed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closedPositions.map((position) => (
+                      <ClosedPositionRow
+                        key={position.id}
+                        position={position}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

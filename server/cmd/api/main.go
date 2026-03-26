@@ -62,8 +62,10 @@ func main() {
 		// Phase 2: Trading Execution
 		r.Post("/execute-trades", handlers.ExecuteTrades)
 		r.Get("/positions", handlers.GetPositions)
+		r.Get("/positions/closed", handlers.GetClosedPositions)
 		r.Delete("/positions/{id}", handlers.ClosePosition)
 		r.Post("/positions/sync", handlers.SyncPositions)
+		r.Post("/positions/reconcile", handlers.ReconcilePositions)
 		r.Get("/transactions", handlers.GetTransactions)
 
 		// eToro Integration

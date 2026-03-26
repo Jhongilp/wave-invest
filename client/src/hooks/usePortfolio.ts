@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { fetchApi } from '../lib/api';
-import type { PortfolioSummary, Position, Transaction, EtoroPortfolio, SyncPositionsResult } from '../types';
+import type { PortfolioSummary, Position, Transaction, EtoroPortfolio, SyncPositionsResult, ReconcilePositionsResult } from '../types';
 
 export function usePortfolio() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [closedPositions, setClosedPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [etoroPortfolio, setEtoroPortfolio] = useState<EtoroPortfolio | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,6 +121,39 @@ export function usePortfolio() {
     }
   }, [fetchPositions, fetchPortfolio]);
 
+  const fetchClosedPositions = useCallback(async () => {
+    try {
+      const data = await fetchApi<Position[]>('/api/positions/closed');
+      setClosedPositions(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch closed positions';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  const reconcilePositions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchApi<ReconcilePositionsResult>('/api/positions/reconcile', {
+        method: 'POST',
+      });
+      // Refresh positions after reconcile
+      await fetchPositions();
+      await fetchClosedPositions();
+      await fetchPortfolio();
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reconcile positions';
+      setError(message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchPositions, fetchClosedPositions, fetchPortfolio]);
+
   // Fetch portfolio on mount
   useEffect(() => {
     fetchPortfolio().catch(() => {});
@@ -128,6 +162,7 @@ export function usePortfolio() {
   return {
     portfolio,
     positions,
+    closedPositions,
     transactions,
     etoroPortfolio,
     loading,
@@ -136,8 +171,10 @@ export function usePortfolio() {
     createPortfolio,
     fetchPositions,
     closePosition,
+    fetchClosedPositions,
     fetchTransactions,
     fetchEtoroPortfolio,
     syncPositions,
+    reconcilePositions,
   };
 }

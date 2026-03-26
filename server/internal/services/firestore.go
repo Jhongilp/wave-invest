@@ -146,6 +146,44 @@ func (s *PositionService) ClosePosition(ctx context.Context, positionID string, 
 	return err
 }
 
+// ClosePositionWithDetails marks a position as closed with detailed info
+func (s *PositionService) ClosePositionWithDetails(ctx context.Context, positionID string, closePrice float64, pnl float64, closedAt time.Time) error {
+	_, err := s.client.Collection(fs.CollectionPositions).Doc(positionID).Update(ctx, []firestore.Update{
+		{Path: "status", Value: "closed"},
+		{Path: "closedAt", Value: closedAt},
+		{Path: "closePrice", Value: closePrice},
+		{Path: "realizedPnl", Value: pnl},
+	})
+	return err
+}
+
+// GetClosedPositions retrieves all closed positions for a user
+func (s *PositionService) GetClosedPositions(ctx context.Context, userID string) ([]models.Position, error) {
+	iter := s.client.Collection(fs.CollectionPositions).
+		Where("userId", "==", userID).
+		Where("status", "==", "closed").
+		Documents(ctx)
+
+	var positions []models.Position
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate positions: %w", err)
+		}
+
+		var pos models.Position
+		if err := doc.DataTo(&pos); err != nil {
+			return nil, fmt.Errorf("failed to parse position: %w", err)
+		}
+		positions = append(positions, pos)
+	}
+
+	return positions, nil
+}
+
 // UpdatePosition updates an existing position in Firestore
 func (s *PositionService) UpdatePosition(ctx context.Context, userID string, position *models.Position) error {
 	_, err := s.client.Collection(fs.CollectionPositions).Doc(position.ID).Update(ctx, []firestore.Update{
