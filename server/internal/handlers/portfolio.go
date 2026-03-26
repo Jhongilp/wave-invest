@@ -262,6 +262,7 @@ func GetTransactions(w http.ResponseWriter, r *http.Request) {
 // EtoroPortfolioResponse represents the eToro portfolio data with enriched info
 type EtoroPortfolioResponse struct {
 	Positions []EtoroPortfolioPosition `json:"positions"`
+	Credit    float64                  `json:"credit"`
 }
 
 // EtoroPortfolioPosition represents a position from eToro with symbol info
@@ -282,21 +283,27 @@ type EtoroPortfolioPosition struct {
 
 // GetEtoroPortfolio handles GET /api/etoro/portfolio
 func GetEtoroPortfolio(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	client := etoro.NewClient()
 
 	// First, get the watchlist to populate symbol cache
 	_, _ = client.GetWatchlist()
 
-	positions, err := client.GetPortfolio()
+	etoroResult, err := client.GetPortfolio()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Update portfolio available balance with eToro credit
+	if err := getPortfolioService().UpdateBalance(ctx, defaultUserID, etoroResult.Credit); err != nil {
+		// Log but don't fail the request
+	}
+
 	// Collect unique instrument IDs for metadata lookup
-	instrumentIDs := make([]int, 0, len(positions))
+	instrumentIDs := make([]int, 0, len(etoroResult.Positions))
 	seenIDs := make(map[int]bool)
-	for _, p := range positions {
+	for _, p := range etoroResult.Positions {
 		if !seenIDs[p.InstrumentID] {
 			instrumentIDs = append(instrumentIDs, p.InstrumentID)
 			seenIDs[p.InstrumentID] = true
@@ -307,8 +314,8 @@ func GetEtoroPortfolio(w http.ResponseWriter, r *http.Request) {
 	instrumentMap, _ := client.GetInstrumentMetadata(instrumentIDs)
 
 	// Convert to response format with symbols
-	result := make([]EtoroPortfolioPosition, len(positions))
-	for i, p := range positions {
+	result := make([]EtoroPortfolioPosition, len(etoroResult.Positions))
+	for i, p := range etoroResult.Positions {
 		symbol := strconv.Itoa(p.InstrumentID)
 		if inst, ok := instrumentMap[p.InstrumentID]; ok {
 			symbol = inst.SymbolFull
@@ -331,7 +338,7 @@ func GetEtoroPortfolio(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(EtoroPortfolioResponse{Positions: result})
+	json.NewEncoder(w).Encode(EtoroPortfolioResponse{Positions: result, Credit: etoroResult.Credit})
 }
 
 // SyncPositionsResponse represents the result of syncing positions
@@ -349,16 +356,21 @@ func SyncPositions(w http.ResponseWriter, r *http.Request) {
 
 	// Get eToro positions
 	_, _ = client.GetWatchlist() // Populate symbol cache
-	etoroPositions, err := client.GetPortfolio()
+	etoroResult, err := client.GetPortfolio()
 	if err != nil {
 		http.Error(w, "failed to fetch eToro portfolio: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Update portfolio available balance with eToro credit
+	if err := getPortfolioService().UpdateBalance(ctx, defaultUserID, etoroResult.Credit); err != nil {
+		// Log but don't fail the request
+	}
+
 	// Get instrument metadata for symbols
-	instrumentIDs := make([]int, 0, len(etoroPositions))
+	instrumentIDs := make([]int, 0, len(etoroResult.Positions))
 	seenIDs := make(map[int]bool)
-	for _, p := range etoroPositions {
+	for _, p := range etoroResult.Positions {
 		if !seenIDs[p.InstrumentID] {
 			instrumentIDs = append(instrumentIDs, p.InstrumentID)
 			seenIDs[p.InstrumentID] = true
@@ -368,7 +380,7 @@ func SyncPositions(w http.ResponseWriter, r *http.Request) {
 
 	// Create map of eToro positions by symbol for easy lookup
 	etoroBySymbol := make(map[string]etoro.PortfolioPosition)
-	for _, p := range etoroPositions {
+	for _, p := range etoroResult.Positions {
 		symbol := strconv.Itoa(p.InstrumentID)
 		if inst, ok := instrumentMap[p.InstrumentID]; ok {
 			symbol = inst.SymbolFull

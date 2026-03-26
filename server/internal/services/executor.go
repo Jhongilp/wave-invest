@@ -127,19 +127,18 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			continue
 		}
 
-		// Fetch actual position details from eToro to get the real entry price
-		actualEntryPrice := entryPrice // Default to estimated price
-		actualUnits := quantity        // Default to calculated quantity
-		var etoroPositionID int64
-
+		// Fetch actual position details from eToro to CONFIRM the trade was executed
+		// Only save to Firestore if we can verify the position exists in eToro
 		portfolioPos, err := e.etoroClient.GetPositionByOrderID(etoroResp.OrderID)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("warning: could not fetch actual entry price for %s: %v", opp.TradingPlan.Ticker, err))
-		} else {
-			actualEntryPrice = portfolioPos.OpenRate
-			actualUnits = portfolioPos.Units
-			etoroPositionID = portfolioPos.PositionID
+			result.Errors = append(result.Errors, fmt.Sprintf("trade for %s may have failed - could not verify position in eToro: %v", opp.TradingPlan.Ticker, err))
+			continue // Skip saving to Firestore - position not confirmed
 		}
+
+		// Position confirmed in eToro - use actual values
+		actualEntryPrice := portfolioPos.OpenRate
+		actualUnits := portfolioPos.Units
+		etoroPositionID := portfolioPos.PositionID
 
 		// Create position record with actual values from eToro
 		position := models.Position{

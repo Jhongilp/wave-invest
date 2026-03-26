@@ -461,8 +461,14 @@ type etoroPortfolioResponse struct {
 	} `json:"clientPortfolio"`
 }
 
+// EtoroPortfolioResult contains positions and account credit from eToro
+type EtoroPortfolioResult struct {
+	Positions []PortfolioPosition
+	Credit    float64
+}
+
 // GetPortfolio fetches the complete portfolio from eToro including all positions with their actual rates
-func (c *Client) GetPortfolio() ([]PortfolioPosition, error) {
+func (c *Client) GetPortfolio() (*EtoroPortfolioResult, error) {
 	endpoint := "/api/v1/trading/info/portfolio"
 	if c.isDemo {
 		endpoint = "/api/v1/trading/info/demo/portfolio"
@@ -483,17 +489,20 @@ func (c *Client) GetPortfolio() ([]PortfolioPosition, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return etoroResp.ClientPortfolio.Positions, nil
+	return &EtoroPortfolioResult{
+		Positions: etoroResp.ClientPortfolio.Positions,
+		Credit:    etoroResp.ClientPortfolio.Credit,
+	}, nil
 }
 
 // GetPositionByOrderID finds a position in the portfolio by its order ID
 func (c *Client) GetPositionByOrderID(orderID int64) (*PortfolioPosition, error) {
-	positions, err := c.GetPortfolio()
+	result, err := c.GetPortfolio()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, p := range positions {
+	for _, p := range result.Positions {
 		if p.OrderID == orderID {
 			return &p, nil
 		}

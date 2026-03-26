@@ -110,6 +110,7 @@ export interface EtoroPortfolioPosition {
 
 export interface EtoroPortfolio {
   positions: EtoroPortfolioPosition[];
+  credit: number;
 }
 
 export interface SyncPositionsResult {
