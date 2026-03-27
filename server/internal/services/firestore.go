@@ -29,7 +29,7 @@ func NewPortfolioService() *PortfolioService {
 
 // GetPortfolio retrieves a user's portfolio, creating a default one if it doesn't exist
 func (s *PortfolioService) GetPortfolio(ctx context.Context, userID string) (*models.Portfolio, error) {
-	doc, err := s.client.Collection(fs.CollectionPortfolios).Doc(userID).Get(ctx)
+	doc, err := s.client.Collection(fs.CollectionPortfolios()).Doc(userID).Get(ctx)
 	if err != nil {
 		// Auto-create a default portfolio if not found
 		if status.Code(err) == codes.NotFound {
@@ -61,7 +61,7 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, userID string, b
 		UpdatedAt:              time.Now(),
 	}
 
-	_, err := s.client.Collection(fs.CollectionPortfolios).Doc(userID).Set(ctx, portfolio)
+	_, err := s.client.Collection(fs.CollectionPortfolios()).Doc(userID).Set(ctx, portfolio)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create portfolio: %w", err)
 	}
@@ -71,7 +71,7 @@ func (s *PortfolioService) CreatePortfolio(ctx context.Context, userID string, b
 
 // UpdateBalance updates the available balance
 func (s *PortfolioService) UpdateBalance(ctx context.Context, userID string, newBalance float64) error {
-	_, err := s.client.Collection(fs.CollectionPortfolios).Doc(userID).Update(ctx, []firestore.Update{
+	_, err := s.client.Collection(fs.CollectionPortfolios()).Doc(userID).Update(ctx, []firestore.Update{
 		{Path: "availableBalance", Value: newBalance},
 		{Path: "updatedAt", Value: time.Now()},
 	})
@@ -80,7 +80,7 @@ func (s *PortfolioService) UpdateBalance(ctx context.Context, userID string, new
 
 // UpdateRules updates trading rules for a portfolio
 func (s *PortfolioService) UpdateRules(ctx context.Context, userID string, rules models.TradingRules) error {
-	_, err := s.client.Collection(fs.CollectionPortfolios).Doc(userID).Update(ctx, []firestore.Update{
+	_, err := s.client.Collection(fs.CollectionPortfolios()).Doc(userID).Update(ctx, []firestore.Update{
 		{Path: "maxPositionPercent", Value: rules.MaxPositionPercent},
 		{Path: "maxConcurrentPositions", Value: rules.MaxConcurrentPositions},
 		{Path: "minScoreThreshold", Value: rules.MinScoreThreshold},
@@ -104,13 +104,13 @@ func NewPositionService() *PositionService {
 
 // SavePosition saves a new position to Firestore
 func (s *PositionService) SavePosition(ctx context.Context, position models.Position) error {
-	_, err := s.client.Collection(fs.CollectionPositions).Doc(position.ID).Set(ctx, position)
+	_, err := s.client.Collection(fs.CollectionPositions()).Doc(position.ID).Set(ctx, position)
 	return err
 }
 
 // GetOpenPositions retrieves all open positions for a user
 func (s *PositionService) GetOpenPositions(ctx context.Context, userID string) ([]models.Position, error) {
-	iter := s.client.Collection(fs.CollectionPositions).
+	iter := s.client.Collection(fs.CollectionPositions()).
 		Where("userId", "==", userID).
 		Where("status", "==", "open").
 		Documents(ctx)
@@ -137,7 +137,7 @@ func (s *PositionService) GetOpenPositions(ctx context.Context, userID string) (
 
 // ClosePosition marks a position as closed
 func (s *PositionService) ClosePosition(ctx context.Context, positionID string, closePrice float64, pnl float64) error {
-	_, err := s.client.Collection(fs.CollectionPositions).Doc(positionID).Update(ctx, []firestore.Update{
+	_, err := s.client.Collection(fs.CollectionPositions()).Doc(positionID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: "closed"},
 		{Path: "closedAt", Value: time.Now()},
 		{Path: "closePrice", Value: closePrice},
@@ -148,7 +148,7 @@ func (s *PositionService) ClosePosition(ctx context.Context, positionID string, 
 
 // ClosePositionWithDetails marks a position as closed with detailed info
 func (s *PositionService) ClosePositionWithDetails(ctx context.Context, positionID string, closePrice float64, pnl float64, closedAt time.Time) error {
-	_, err := s.client.Collection(fs.CollectionPositions).Doc(positionID).Update(ctx, []firestore.Update{
+	_, err := s.client.Collection(fs.CollectionPositions()).Doc(positionID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: "closed"},
 		{Path: "closedAt", Value: closedAt},
 		{Path: "closePrice", Value: closePrice},
@@ -159,7 +159,7 @@ func (s *PositionService) ClosePositionWithDetails(ctx context.Context, position
 
 // GetClosedPositions retrieves all closed positions for a user
 func (s *PositionService) GetClosedPositions(ctx context.Context, userID string) ([]models.Position, error) {
-	iter := s.client.Collection(fs.CollectionPositions).
+	iter := s.client.Collection(fs.CollectionPositions()).
 		Where("userId", "==", userID).
 		Where("status", "==", "closed").
 		Documents(ctx)
@@ -186,7 +186,7 @@ func (s *PositionService) GetClosedPositions(ctx context.Context, userID string)
 
 // UpdatePosition updates an existing position in Firestore
 func (s *PositionService) UpdatePosition(ctx context.Context, userID string, position *models.Position) error {
-	_, err := s.client.Collection(fs.CollectionPositions).Doc(position.ID).Update(ctx, []firestore.Update{
+	_, err := s.client.Collection(fs.CollectionPositions()).Doc(position.ID).Update(ctx, []firestore.Update{
 		{Path: "entryPrice", Value: position.EntryPrice},
 		{Path: "quantity", Value: position.Quantity},
 		{Path: "etoroId", Value: position.EtoroID},
@@ -208,13 +208,13 @@ func NewTransactionService() *TransactionService {
 
 // LogTransaction saves a transaction to Firestore
 func (s *TransactionService) LogTransaction(ctx context.Context, tx models.Transaction) error {
-	_, err := s.client.Collection(fs.CollectionTransactions).Doc(tx.ID).Set(ctx, tx)
+	_, err := s.client.Collection(fs.CollectionTransactions()).Doc(tx.ID).Set(ctx, tx)
 	return err
 }
 
 // GetTransactions retrieves transactions for a user within a date range
 func (s *TransactionService) GetTransactions(ctx context.Context, userID string, since time.Time) ([]models.Transaction, error) {
-	iter := s.client.Collection(fs.CollectionTransactions).
+	iter := s.client.Collection(fs.CollectionTransactions()).
 		Where("userId", "==", userID).
 		Where("timestamp", ">=", since).
 		OrderBy("timestamp", firestore.Desc).
@@ -254,13 +254,13 @@ func NewAnalysisService() *AnalysisService {
 
 // SaveAnalysis saves a daily analysis to Firestore
 func (s *AnalysisService) SaveAnalysis(ctx context.Context, analysis models.DailyAnalysis) error {
-	_, err := s.client.Collection(fs.CollectionAnalysis).Doc(analysis.ID).Set(ctx, analysis)
+	_, err := s.client.Collection(fs.CollectionAnalysis()).Doc(analysis.ID).Set(ctx, analysis)
 	return err
 }
 
 // GetAnalysisByDate retrieves all analyses for a specific date
 func (s *AnalysisService) GetAnalysisByDate(ctx context.Context, date string) ([]models.DailyAnalysis, error) {
-	iter := s.client.Collection(fs.CollectionAnalysis).
+	iter := s.client.Collection(fs.CollectionAnalysis()).
 		Where("date", "==", date).
 		Documents(ctx)
 
@@ -294,7 +294,7 @@ func (s *AnalysisService) CleanupOldAnalysis(ctx context.Context, retentionDays 
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	cutoffDate := cutoff.Format("2006-01-02")
 
-	iter := s.client.Collection(fs.CollectionAnalysis).
+	iter := s.client.Collection(fs.CollectionAnalysis()).
 		Where("date", "<", cutoffDate).
 		Documents(ctx)
 

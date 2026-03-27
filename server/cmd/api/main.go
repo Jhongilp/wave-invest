@@ -70,6 +70,10 @@ func main() {
 
 		// eToro Integration
 		r.Get("/etoro/portfolio", handlers.GetEtoroPortfolio)
+
+		// Trading Mode
+		r.Get("/trading-mode", handlers.GetTradingMode)
+		r.Put("/trading-mode", handlers.SetTradingMode)
 	})
 
 	log.Printf("Server starting on port %s", cfg.Port)

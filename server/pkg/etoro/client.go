@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,7 +19,8 @@ import (
 
 var (
 	clientInstance *Client
-	clientOnce     sync.Once
+	clientMu       sync.RWMutex
+	initialized    bool
 )
 
 type Client struct {
@@ -31,10 +33,35 @@ type Client struct {
 	idToSymbol map[int]string // Cache: instrument ID -> symbol
 }
 
-// NewClient returns a singleton eToro client
+func init() {
+	// Register listener to reinitialize client when trading mode changes
+	config.ModeChangeListeners = append(config.ModeChangeListeners, func() {
+		clientMu.Lock()
+		defer clientMu.Unlock()
+		// Reset client so it gets recreated with new credentials
+		clientInstance = nil
+		initialized = false
+		log.Println("eToro: Client reset due to trading mode change")
+	})
+}
+
+// NewClient returns a singleton eToro client (reinitializes on mode change)
 func NewClient() *Client {
-	clientOnce.Do(func() {
+	clientMu.Lock()
+	defer clientMu.Unlock()
+
+	if !initialized || clientInstance == nil {
 		cfg := config.Get()
+		if cfg == nil {
+			log.Println("eToro: Config not loaded yet, returning minimal client")
+			// Config not loaded yet, return minimal client
+			return &Client{
+				baseURL:    "https://public-api.etoro.com",
+				httpClient: &http.Client{},
+				symbolToID: make(map[string]int),
+				idToSymbol: make(map[int]string),
+			}
+		}
 		clientInstance = &Client{
 			apiKey:     cfg.EtoroAPIKey,
 			userKey:    cfg.EtoroAPISecret,
@@ -44,7 +71,9 @@ func NewClient() *Client {
 			symbolToID: make(map[string]int),
 			idToSymbol: make(map[int]string),
 		}
-	})
+		initialized = true
+		log.Printf("eToro: Client initialized (isDemo=%v)", clientInstance.isDemo)
+	}
 	return clientInstance
 }
 

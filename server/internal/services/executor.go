@@ -13,7 +13,6 @@ import (
 
 // Executor orchestrates trade execution based on scored opportunities
 type Executor struct {
-	etoroClient      *etoro.Client
 	portfolioService *PortfolioService
 	positionService  *PositionService
 	txService        *TransactionService
@@ -23,7 +22,6 @@ type Executor struct {
 // NewExecutor creates a new Executor
 func NewExecutor() *Executor {
 	return &Executor{
-		etoroClient:      etoro.NewClient(),
 		portfolioService: NewPortfolioService(),
 		positionService:  NewPositionService(),
 		txService:        NewTransactionService(),
@@ -104,7 +102,7 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 		}
 
 		// Get eToro instrument ID for the ticker
-		instrumentID, err := e.etoroClient.GetInstrumentIDBySymbol(opp.TradingPlan.Ticker)
+		instrumentID, err := etoro.NewClient().GetInstrumentIDBySymbol(opp.TradingPlan.Ticker)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to get instrument ID for %s: %v", opp.TradingPlan.Ticker, err))
 			result.SkippedCount++
@@ -121,7 +119,7 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 			TakeProfitRate: opp.TradingPlan.Trade.Targets.PT1,
 		}
 
-		etoroResp, err := e.etoroClient.OpenPosition(etoroReq)
+		etoroResp, err := etoro.NewClient().OpenPosition(etoroReq)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to open position for %s: %v", opp.TradingPlan.Ticker, err))
 			continue
@@ -129,7 +127,7 @@ func (e *Executor) ExecuteTrades(ctx context.Context, userID string, opportuniti
 
 		// Fetch actual position details from eToro to CONFIRM the trade was executed
 		// Only save to Firestore if we can verify the position exists in eToro
-		portfolioPos, err := e.etoroClient.GetPositionByOrderID(etoroResp.OrderID)
+		portfolioPos, err := etoro.NewClient().GetPositionByOrderID(etoroResp.OrderID)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("trade for %s may have failed - could not verify position in eToro: %v", opp.TradingPlan.Ticker, err))
 			continue // Skip saving to Firestore - position not confirmed
@@ -212,7 +210,7 @@ func (e *Executor) ClosePosition(ctx context.Context, userID string, positionID 
 	}
 
 	// Close on eToro
-	etoroResp, err := e.etoroClient.ClosePosition(position.EtoroID)
+	etoroResp, err := etoro.NewClient().ClosePosition(position.EtoroID)
 	if err != nil {
 		return fmt.Errorf("failed to close eToro position: %w", err)
 	}

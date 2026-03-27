@@ -6,15 +6,32 @@ import (
 	"os"
 	"sync"
 
+	"wave_invest/config"
+
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/option"
 )
 
 var (
-	client           *firestore.Client
-	once             sync.Once
-	collectionPrefix string
+	client *firestore.Client
+	once   sync.Once
+	collMu sync.RWMutex
+	isDemo bool
 )
+
+func init() {
+	// Register listener to update collection names when trading mode changes
+	config.ModeChangeListeners = append(config.ModeChangeListeners, func() {
+		collMu.Lock()
+		defer collMu.Unlock()
+		cfg := config.Get()
+		if cfg == nil {
+			return // Config not loaded yet, skip
+		}
+		isDemo = cfg.IsDemo()
+		log.Printf("Firestore: Switched to %s collections", map[bool]string{true: "DEMO", false: "REAL"}[isDemo])
+	})
+}
 
 // GetClient returns a singleton Firestore client
 func GetClient() *firestore.Client {
@@ -28,14 +45,13 @@ func GetClient() *firestore.Client {
 			log.Fatal("GOOGLE_CLOUD_PROJECT or FIRESTORE_PROJECT_ID environment variable is required")
 		}
 
-		// Set collection prefix based on trading mode
-		mode := os.Getenv("TRADING_MODE")
-		if mode == "real" {
-			collectionPrefix = ""
-			log.Println("Firestore: Using REAL collections (no prefix)")
-		} else {
-			collectionPrefix = "demo_"
+		// Set initial mode from config
+		cfg := config.Get()
+		isDemo = cfg.IsDemo()
+		if isDemo {
 			log.Println("Firestore: Using DEMO collections (demo_ prefix)")
+		} else {
+			log.Println("Firestore: Using REAL collections (no prefix)")
 		}
 
 		var err error
@@ -51,9 +67,6 @@ func GetClient() *firestore.Client {
 			log.Fatalf("Failed to create Firestore client: %v", err)
 		}
 
-		// Initialize collection names with prefix
-		initCollections()
-
 		log.Printf("Firestore client initialized for project: %s", projectID)
 	})
 
@@ -68,18 +81,18 @@ func Close() error {
 	return nil
 }
 
-// Collection name getters (with environment prefix)
-var (
-	CollectionPortfolios   string
-	CollectionPositions    string
-	CollectionTransactions string
-	CollectionAnalysis     string
-)
-
-// InitCollections must be called after GetClient to set collection names
-func initCollections() {
-	CollectionPortfolios = collectionPrefix + "portfolios"
-	CollectionPositions = collectionPrefix + "positions"
-	CollectionTransactions = collectionPrefix + "transactions"
-	CollectionAnalysis = collectionPrefix + "daily_analysis"
+// getPrefix returns the current collection prefix based on trading mode
+func getPrefix() string {
+	collMu.RLock()
+	defer collMu.RUnlock()
+	if isDemo {
+		return "demo_"
+	}
+	return ""
 }
+
+// Collection name getters (dynamically prefixed based on current mode)
+func CollectionPortfolios() string   { return getPrefix() + "portfolios" }
+func CollectionPositions() string    { return getPrefix() + "positions" }
+func CollectionTransactions() string { return getPrefix() + "transactions" }
+func CollectionAnalysis() string     { return getPrefix() + "daily_analysis" }

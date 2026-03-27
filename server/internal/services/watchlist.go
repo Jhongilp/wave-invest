@@ -5,16 +5,12 @@ import (
 	"wave_invest/pkg/etoro"
 )
 
-type WatchlistService struct {
-	etoroClient *etoro.Client
-}
+type WatchlistService struct{}
 
 func NewWatchlistService() *WatchlistService {
-	return &WatchlistService{
-		etoroClient: etoro.NewClient(),
-	}
+	return &WatchlistService{}
 }
 
 func (s *WatchlistService) GetWatchlist() ([]models.Ticker, error) {
-	return s.etoroClient.GetWatchlist()
+	return etoro.NewClient().GetWatchlist()
 }

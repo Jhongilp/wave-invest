@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useTradingMode } from '../../hooks';
 
 export type ViewType = 'watchlist' | 'opportunities' | 'portfolio' | 'settings';
 
@@ -25,6 +26,35 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
   );
 }
 
+function TradingModeToggle() {
+  const { isDemo, updating, toggleMode } = useTradingMode();
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-xs font-medium ${isDemo ? 'text-gray-400' : 'text-green-400'}`}>
+        {isDemo ? 'DEMO' : 'REAL'}
+      </span>
+      <button
+        onClick={() => toggleMode()}
+        disabled={updating}
+        className={`relative w-11 h-6 rounded-full transition-colors ${
+          isDemo ? 'bg-gray-600' : 'bg-green-600'
+        } ${updating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        title={`Switch to ${isDemo ? 'real' : 'demo'} trading`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+            isDemo ? 'translate-x-0' : 'translate-x-5'
+          }`}
+        />
+      </button>
+      {!isDemo && (
+        <span className="text-xs text-yellow-500 font-medium animate-pulse">⚠️ LIVE</span>
+      )}
+    </div>
+  );
+}
+
 interface DashboardLayoutProps {
   sidebar: ReactNode;
   children: ReactNode;
@@ -37,12 +67,17 @@ export function DashboardLayout({ sidebar, children, currentView, onViewChange }
     <div className="min-h-screen bg-gray-950 text-white flex">
       {/* Sidebar */}
       <aside className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col">
-        {/* Logo */}
+        {/* Logo & Mode Toggle */}
         <div className="p-4 border-b border-gray-800">
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <span className="text-2xl">🌊</span>
-            Wave Invest
-          </h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              <span className="text-2xl">🌊</span>
+              Wave Invest
+            </h1>
+          </div>
+          <div className="mt-3">
+            <TradingModeToggle />
+          </div>
         </div>
 
         {/* Navigation */}
