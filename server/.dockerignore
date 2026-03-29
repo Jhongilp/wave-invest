@@ -1,0 +1,24 @@
+# Development files
+.air.toml
+.env
+.env.*
+*.md
+
+# Credentials (never include in Docker image)
+*-credentials.json
+*.pem
+*.key
+
+# Temp and build artifacts
+tmp/
+*.exe
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
