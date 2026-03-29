@@ -40,13 +40,13 @@ export function TradingPlanView({ plan, loading, error }: TradingPlanViewProps) 
   }
 
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="flex-1 overflow-auto p-4 md:p-6">
+      <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-white">{plan.ticker}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">{plan.ticker}</h1>
           <span
-            className={`px-4 py-1 rounded-full text-sm font-medium ${
+            className={`px-3 md:px-4 py-1 rounded-full text-xs md:text-sm font-medium ${
               plan.trade.bias === 'bullish'
                 ? 'bg-green-500/20 text-green-400'
                 : plan.trade.bias === 'bearish'

@@ -109,14 +109,14 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Opportunities</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-white">Opportunities</h1>
           {lastAnalysisDate && (
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 text-xs md:text-sm">
               {opportunities.length} opportunities from {lastAnalysisDate}
-              {isStale && <span className="text-yellow-400 ml-2">(stale - not from today)</span>}
+              {isStale && <span className="text-yellow-400 ml-2">(stale)</span>}
             </p>
           )}
           {analysisResult && (
@@ -125,21 +125,21 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
             </p>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={() => runDailyAnalysis()}
             disabled={loading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors"
           >
-            {loading ? 'Analyzing...' : hasExistingData ? 'Refresh Analysis' : 'Run Daily Analysis'}
+            {loading ? 'Analyzing...' : hasExistingData ? 'Refresh' : 'Run Analysis'}
           </button>
           {opportunities.length > 0 && (
             <button
               onClick={() => executeTrades()}
               disabled={executing}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors"
             >
-              {executing ? 'Executing...' : 'Execute Trades'}
+              {executing ? '...' : 'Execute'}
             </button>
           )}
         </div>

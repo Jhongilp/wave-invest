@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTradingMode } from '../../hooks';
 
@@ -22,6 +23,27 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
     >
       <span className="text-lg">{icon}</span>
       <span className="font-medium">{label}</span>
+    </button>
+  );
+}
+
+interface MobileNavItemProps {
+  icon: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+function MobileNavItem({ icon, label, active, onClick }: MobileNavItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center py-2 px-3 flex-1 transition-colors ${
+        active ? 'text-blue-400' : 'text-gray-400'
+      }`}
+    >
+      <span className="text-xl">{icon}</span>
+      <span className="text-xs mt-1">{label}</span>
     </button>
   );
 }
@@ -63,10 +85,49 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ sidebar, children, currentView, onViewChange }: DashboardLayoutProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleViewChange = (view: ViewType) => {
+    onViewChange(view);
+    setSidebarOpen(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex">
-      {/* Sidebar */}
-      <aside className="w-80 bg-gray-900 border-r border-gray-800 flex flex-col">
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col md:flex-row">
+      {/* Mobile Header */}
+      <header className="md:hidden bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <h1 className="text-lg font-bold text-white flex items-center gap-2">
+          <span className="text-xl">🌊</span>
+          Wave Invest
+        </h1>
+        <div className="flex items-center gap-3">
+          <TradingModeToggle />
+          {currentView === 'watchlist' && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 text-gray-400 hover:text-white"
+            >
+              <span className="text-xl">{sidebarOpen ? '✕' : '☰'}</span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && currentView === 'watchlist' && (
+        <>
+          <div 
+            className="md:hidden fixed inset-0 bg-black/50 z-40"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside className="md:hidden fixed top-14 left-0 bottom-16 w-80 max-w-[85vw] bg-gray-900 border-r border-gray-800 z-50 overflow-auto">
+            {sidebar}
+          </aside>
+        </>
+      )}
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-80 bg-gray-900 border-r border-gray-800 flex-col flex-shrink-0">
         {/* Logo & Mode Toggle */}
         <div className="p-4 border-b border-gray-800">
           <div className="flex items-center justify-between">
@@ -86,25 +147,25 @@ export function DashboardLayout({ sidebar, children, currentView, onViewChange }
             icon="📋"
             label="Watchlist"
             active={currentView === 'watchlist'}
-            onClick={() => onViewChange('watchlist')}
+            onClick={() => handleViewChange('watchlist')}
           />
           <NavItem
             icon="🎯"
             label="Opportunities"
             active={currentView === 'opportunities'}
-            onClick={() => onViewChange('opportunities')}
+            onClick={() => handleViewChange('opportunities')}
           />
           <NavItem
             icon="💼"
             label="Portfolio"
             active={currentView === 'portfolio'}
-            onClick={() => onViewChange('portfolio')}
+            onClick={() => handleViewChange('portfolio')}
           />
           <NavItem
             icon="⚙️"
             label="Settings"
             active={currentView === 'settings'}
-            onClick={() => onViewChange('settings')}
+            onClick={() => handleViewChange('settings')}
           />
         </nav>
 
@@ -126,9 +187,37 @@ export function DashboardLayout({ sidebar, children, currentView, onViewChange }
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden pb-16 md:pb-0">
         {children}
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 flex safe-area-bottom">
+        <MobileNavItem
+          icon="📋"
+          label="Watchlist"
+          active={currentView === 'watchlist'}
+          onClick={() => handleViewChange('watchlist')}
+        />
+        <MobileNavItem
+          icon="🎯"
+          label="Opportunities"
+          active={currentView === 'opportunities'}
+          onClick={() => handleViewChange('opportunities')}
+        />
+        <MobileNavItem
+          icon="💼"
+          label="Portfolio"
+          active={currentView === 'portfolio'}
+          onClick={() => handleViewChange('portfolio')}
+        />
+        <MobileNavItem
+          icon="⚙️"
+          label="Settings"
+          active={currentView === 'settings'}
+          onClick={() => handleViewChange('settings')}
+        />
+      </nav>
     </div>
   );
 }

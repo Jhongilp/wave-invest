@@ -228,36 +228,36 @@ export function PortfolioView() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Portfolio</h1>
-        <div className="flex gap-3">
+    <div className="p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <h1 className="text-xl md:text-2xl font-bold text-white">Portfolio</h1>
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={handleFetchEtoroPortfolio}
             disabled={loading}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium"
           >
-            {loading ? 'Loading...' : 'Fetch eToro'}
+            {loading ? '...' : 'Fetch eToro'}
           </button>
           <button
             onClick={handleSyncPositions}
             disabled={loading}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium"
           >
-            {loading ? 'Syncing...' : 'Sync Positions'}
+            {loading ? '...' : 'Sync'}
           </button>
           <button
             onClick={handleReconcilePositions}
             disabled={loading}
-            className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            className="bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium"
           >
-            {loading ? 'Reconciling...' : 'Reconcile'}
+            {loading ? '...' : 'Reconcile'}
           </button>
           <button
             onClick={() => { fetchPortfolio(); fetchClosedPositions(); }}
-            className="text-gray-400 hover:text-white text-sm"
+            className="text-gray-400 hover:text-white text-xs md:text-sm px-2"
           >
-            Refresh
+            ↻
           </button>
         </div>
       </div>
@@ -297,22 +297,22 @@ export function PortfolioView() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-gray-400 text-sm">Total Budget</p>
-          <p className="text-2xl font-bold text-white">{formatCurrency(portfolio?.budget || 0)}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
+        <div className="bg-gray-800 rounded-lg p-3 md:p-4">
+          <p className="text-gray-400 text-xs md:text-sm">Total Budget</p>
+          <p className="text-lg md:text-2xl font-bold text-white">{formatCurrency(portfolio?.budget || 0)}</p>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-gray-400 text-sm">Available Balance</p>
-          <p className="text-2xl font-bold text-white">{formatCurrency(portfolio?.availableBalance || 0)}</p>
+        <div className="bg-gray-800 rounded-lg p-3 md:p-4">
+          <p className="text-gray-400 text-xs md:text-sm">Available</p>
+          <p className="text-lg md:text-2xl font-bold text-white">{formatCurrency(portfolio?.availableBalance || 0)}</p>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-gray-400 text-sm">Invested</p>
-          <p className="text-2xl font-bold text-white">{formatCurrency(portfolio?.investedAmount || 0)}</p>
+        <div className="bg-gray-800 rounded-lg p-3 md:p-4">
+          <p className="text-gray-400 text-xs md:text-sm">Invested</p>
+          <p className="text-lg md:text-2xl font-bold text-white">{formatCurrency(portfolio?.investedAmount || 0)}</p>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <p className="text-gray-400 text-sm">Daily P&L</p>
-          <p className={`text-2xl font-bold ${(portfolio?.dailyPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        <div className="bg-gray-800 rounded-lg p-3 md:p-4">
+          <p className="text-gray-400 text-xs md:text-sm">Daily P&L</p>
+          <p className={`text-lg md:text-2xl font-bold ${(portfolio?.dailyPnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatCurrency(portfolio?.dailyPnl || 0)}
           </p>
         </div>
@@ -346,10 +346,10 @@ export function PortfolioView() {
       {/* Open Positions */}
       <div className="bg-gray-800 rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-700">
-          <h3 className="text-lg font-medium text-white">
+          <h3 className="text-base md:text-lg font-medium text-white">
             Open Positions ({positions.length})
             {orphanedTickers.size > 0 && (
-              <span className="ml-2 text-sm text-yellow-400">
+              <span className="ml-2 text-xs md:text-sm text-yellow-400">
                 ({orphanedTickers.size} orphaned)
               </span>
             )}
@@ -360,27 +360,29 @@ export function PortfolioView() {
             No open positions
           </div>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-750">
-              <tr className="text-left text-gray-400 text-sm">
-                <th className="py-2 px-4">Ticker</th>
-                <th className="py-2 px-4">Entry Price</th>
-                <th className="py-2 px-4">Quantity</th>
-                <th className="py-2 px-4">Value</th>
-                <th className="py-2 px-4">Stop Loss</th>
-                <th className="py-2 px-4">Take Profit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((position) => (
-                <PositionRow
-                  key={position.id}
-                  position={position}
-                  isOrphaned={orphanedTickers.has(position.ticker)}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px]">
+              <thead className="bg-gray-750">
+                <tr className="text-left text-gray-400 text-xs md:text-sm">
+                  <th className="py-2 px-3 md:px-4">Ticker</th>
+                  <th className="py-2 px-3 md:px-4">Entry</th>
+                  <th className="py-2 px-3 md:px-4">Qty</th>
+                  <th className="py-2 px-3 md:px-4">Value</th>
+                  <th className="py-2 px-3 md:px-4">SL</th>
+                  <th className="py-2 px-3 md:px-4">TP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map((position) => (
+                  <PositionRow
+                    key={position.id}
+                    position={position}
+                    isOrphaned={orphanedTickers.has(position.ticker)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
