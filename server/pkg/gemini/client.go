@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"wave_invest/internal/models"
@@ -19,7 +20,7 @@ type Client struct {
 
 func NewClient() *Client {
 	return &Client{
-		apiKey: os.Getenv("GEMINI_API_KEY"),
+		apiKey: strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
