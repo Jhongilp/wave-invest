@@ -397,6 +397,11 @@ func (c *WSClient) handlePriceUpdate(msg WSPriceMsg) {
 		return
 	}
 
+	// Discard updates without price data (only have timestamp/tick name)
+	if priceData.Bid == "" && priceData.Ask == "" && priceData.LastExecution == "" {
+		return
+	}
+
 	// Get symbol for instrument
 	c.mu.RLock()
 	symbol := c.idToSymbol[instrumentID]
@@ -410,6 +415,11 @@ func (c *WSClient) handlePriceUpdate(msg WSPriceMsg) {
 	fmt.Sscanf(priceData.Bid, "%f", &bid)
 	fmt.Sscanf(priceData.Ask, "%f", &ask)
 	fmt.Sscanf(priceData.LastExecution, "%f", &last)
+
+	// Discard if all prices are zero (invalid data)
+	if bid == 0 && ask == 0 && last == 0 {
+		return
+	}
 
 	livePrice := LivePrice{
 		InstrumentID: instrumentID,

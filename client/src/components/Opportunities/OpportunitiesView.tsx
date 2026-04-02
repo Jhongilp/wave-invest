@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useOpportunities, useLivePrices } from '../../hooks';
 import { recalculateScore, sortByAdjustedScore, type AdjustedOpportunity, type PriceStatus } from '../../lib/scorer';
+
+type SortMode = 'ai' | 'live';
 
 function getScoreColor(score: number): string {
   if (score >= 70) return 'bg-green-500';
@@ -36,9 +38,10 @@ function getPriceStatusInfo(status: PriceStatus): { label: string; color: string
 interface OpportunityCardProps {
   opportunity: AdjustedOpportunity;
   onSelect: (ticker: string) => void;
+  rankChange?: number; // positive = moved up, negative = moved down
 }
 
-function OpportunityCard({ opportunity, onSelect }: OpportunityCardProps) {
+function OpportunityCard({ opportunity, onSelect, rankChange }: OpportunityCardProps) {
   const { tradingPlan, score, scoreBreakdown, adjustedScore, priceStatus, currentPrice, priceChange } = opportunity;
   const { trade, technicals } = tradingPlan;
   const statusInfo = getPriceStatusInfo(priceStatus);
@@ -63,6 +66,11 @@ function OpportunityCard({ opportunity, onSelect }: OpportunityCardProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {rankChange !== undefined && rankChange !== 0 && (
+            <span className={`text-xs font-medium ${rankChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {rankChange > 0 ? `↑${rankChange}` : `↓${Math.abs(rankChange)}`}
+            </span>
+          )}
           {hasLivePrice && adjustedScore !== score && (
             <span className="text-gray-500 text-xs line-through">{score.toFixed(0)}</span>
           )}
@@ -122,6 +130,7 @@ interface OpportunitiesViewProps {
 }
 
 export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
+  const [sortMode, setSortMode] = useState<SortMode>('ai');
   const {
     opportunities,
     analysisResult,
@@ -147,24 +156,43 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
     autoConnect: symbols.length > 0
   });
 
-  // Recalculate scores with live prices and sort
+  // Recalculate scores with live prices (keep AI order)
   const adjustedOpportunities = useMemo(() => {
-    const adjusted = opportunities.map(opp => 
+    return opportunities.map(opp => 
       recalculateScore(opp, prices[opp.tradingPlan.ticker])
     );
-    return sortByAdjustedScore(adjusted);
   }, [opportunities, prices]);
+
+  // Create live-sorted version for comparison / toggle
+  const liveSortedOpportunities = useMemo(() => {
+    return sortByAdjustedScore([...adjustedOpportunities]);
+  }, [adjustedOpportunities]);
+
+  // Calculate rank changes (AI rank vs live rank)
+  const rankChanges = useMemo(() => {
+    const changes: Record<string, number> = {};
+    adjustedOpportunities.forEach((opp, aiRank) => {
+      const liveRank = liveSortedOpportunities.findIndex(
+        o => o.tradingPlan.ticker === opp.tradingPlan.ticker
+      );
+      changes[opp.tradingPlan.ticker] = aiRank - liveRank; // positive = moved up in live
+    });
+    return changes;
+  }, [adjustedOpportunities, liveSortedOpportunities]);
+
+  // Pick which list to display based on sort mode
+  const displayOpportunities = sortMode === 'ai' ? adjustedOpportunities : liveSortedOpportunities;
 
   // Count opportunities by status
   const statusCounts = useMemo(() => {
     const counts = { inZone: 0, nearZone: 0, other: 0 };
-    adjustedOpportunities.forEach(opp => {
+    displayOpportunities.forEach(opp => {
       if (opp.priceStatus === 'in_zone') counts.inZone++;
       else if (opp.priceStatus === 'near_zone') counts.nearZone++;
       else counts.other++;
     });
     return counts;
-  }, [adjustedOpportunities]);
+  }, [displayOpportunities]);
 
   const handleSelect = (ticker: string) => {
     if (onSelectTicker) {
@@ -193,6 +221,31 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-xl md:text-2xl font-bold text-white">Opportunities</h1>
+            {/* Sort mode toggle */}
+            {isConnected && displayOpportunities.length > 0 && (
+              <div className="flex bg-gray-700 rounded-lg p-0.5">
+                <button
+                  onClick={() => setSortMode('ai')}
+                  className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                    sortMode === 'ai' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  AI Order
+                </button>
+                <button
+                  onClick={() => setSortMode('live')}
+                  className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                    sortMode === 'live' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Live Sort
+                </button>
+              </div>
+            )}
             {/* WebSocket connection status */}
             <div className="flex items-center gap-1.5">
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
@@ -280,7 +333,7 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         </div>
       )}
 
-      {adjustedOpportunities.length === 0 && !loading ? (
+      {displayOpportunities.length === 0 && !loading ? (
         <div className="text-center py-12">
           <p className="text-gray-400 text-lg">No opportunities available</p>
           <p className="text-gray-500 text-sm mt-2">
@@ -289,11 +342,12 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {adjustedOpportunities.map((opp) => (
+          {displayOpportunities.map((opp) => (
             <OpportunityCard
               key={opp.tradingPlan.ticker}
               opportunity={opp}
               onSelect={handleSelect}
+              rankChange={sortMode === 'ai' ? rankChanges[opp.tradingPlan.ticker] : undefined}
             />
           ))}
         </div>

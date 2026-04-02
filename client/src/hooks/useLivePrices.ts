@@ -60,11 +60,21 @@ export function useLivePrices(options: UseLivePricesOptions = {}): UseLivePrices
           const msg: WSMessage = JSON.parse(event.data);
           
           if (msg.type === 'price' && msg.symbol) {
+            // Validate prices - skip updates without valid price data
+            const bid = msg.bid ?? 0;
+            const ask = msg.ask ?? 0;
+            const last = msg.last ?? 0;
+            
+            // Skip if all prices are zero or missing
+            if (bid === 0 && ask === 0 && last === 0) {
+              return;
+            }
+            
             const livePrice: LivePrice = {
               symbol: msg.symbol,
-              bid: msg.bid || 0,
-              ask: msg.ask || 0,
-              last: msg.last || 0,
+              bid,
+              ask,
+              last,
               timestamp: msg.timestamp || new Date().toISOString()
             };
             

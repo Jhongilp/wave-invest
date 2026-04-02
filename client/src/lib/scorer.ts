@@ -33,8 +33,22 @@ export function recalculateScore(
   const { tradingPlan } = opportunity;
   const trade = tradingPlan.trade;
   
-  // Use mid-price (average of bid/ask) for comparison
-  const currentPrice = (livePrice.bid + livePrice.ask) / 2;
+  // Use ask price (buy price) - fallback to last if ask not available
+  let currentPrice: number;
+  if (livePrice.ask > 0) {
+    currentPrice = livePrice.ask;
+  } else if (livePrice.last > 0) {
+    currentPrice = livePrice.last;
+  } else {
+    // No valid price data
+    return {
+      ...opportunity,
+      adjustedScore: opportunity.score,
+      priceStatus: 'unknown',
+      currentPrice: undefined,
+      priceChange: 0
+    };
+  }
   
   // Determine price status relative to entry zone
   const priceStatus = getPriceStatus(currentPrice, trade);
