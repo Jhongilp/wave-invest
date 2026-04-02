@@ -117,10 +117,14 @@ func (o *DailyAnalysisOrchestrator) RunDailyAnalysis(ctx context.Context) (*Dail
 		result.Errors = append(result.Errors, err.Error())
 	}
 
-	// 8. Convert pointers to values for scoring
+	// 8. Convert pointers to values for scoring and set InitialAsk from live rates
 	plans := make([]models.TradingPlan, 0, len(planPtrs))
 	for _, p := range planPtrs {
 		if p != nil {
+			// Add the initial ask price from live rates
+			if rate, ok := liveRates[p.Ticker]; ok {
+				p.InitialAsk = rate.Ask
+			}
 			plans = append(plans, *p)
 		}
 	}

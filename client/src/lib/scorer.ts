@@ -15,33 +15,33 @@ const WEIGHT_PRICE_PROXIMITY = 0.30; // 30% adjustment based on live price
  * Recalculates opportunity score based on live price data.
  * The base score from AI analysis is adjusted based on how close
  * the current price is to the entry zone.
+ * Falls back to initialAsk from analysis if no live price available.
  */
 export function recalculateScore(
   opportunity: ScoredOpportunity,
   livePrice: LivePrice | undefined
 ): AdjustedOpportunity {
-  if (!livePrice) {
-    return {
-      ...opportunity,
-      adjustedScore: opportunity.score,
-      priceStatus: 'unknown',
-      currentPrice: undefined,
-      priceChange: 0,
-      liveRR: undefined
-    };
-  }
-
   const { tradingPlan } = opportunity;
   const trade = tradingPlan.trade;
-  
-  // Use ask price (buy price) - fallback to last if ask not available
-  let currentPrice: number;
-  if (livePrice.ask > 0) {
-    currentPrice = livePrice.ask;
-  } else if (livePrice.last > 0) {
-    currentPrice = livePrice.last;
-  } else {
-    // No valid price data
+
+  // Determine current price: live WS price > initialAsk from analysis
+  let currentPrice: number | undefined;
+
+  if (livePrice) {
+    if (livePrice.ask > 0) {
+      currentPrice = livePrice.ask;
+    } else if (livePrice.last > 0) {
+      currentPrice = livePrice.last;
+    }
+  }
+
+  // Fallback to initialAsk from analysis if no live price
+  if (!currentPrice && tradingPlan.initialAsk && tradingPlan.initialAsk > 0) {
+    currentPrice = tradingPlan.initialAsk;
+  }
+
+  // No price data at all
+  if (!currentPrice) {
     return {
       ...opportunity,
       adjustedScore: opportunity.score,

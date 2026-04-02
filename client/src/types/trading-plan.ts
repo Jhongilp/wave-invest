@@ -50,4 +50,5 @@ export interface TradingPlan {
   trade: Trade;
   sentiment: Sentiment;
   summary: string;
+  initialAsk?: number; // Ask price at time of analysis (fallback for live prices)
 }
