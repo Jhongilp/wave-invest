@@ -26,7 +26,8 @@ export function recalculateScore(
       adjustedScore: opportunity.score,
       priceStatus: 'unknown',
       currentPrice: undefined,
-      priceChange: 0
+      priceChange: 0,
+      liveRR: undefined
     };
   }
 
@@ -46,7 +47,8 @@ export function recalculateScore(
       adjustedScore: opportunity.score,
       priceStatus: 'unknown',
       currentPrice: undefined,
-      priceChange: 0
+      priceChange: 0,
+      liveRR: undefined
     };
   }
   
@@ -66,12 +68,16 @@ export function recalculateScore(
   const entryMid = (trade.entryZone.low + trade.entryZone.high) / 2;
   const priceChange = ((currentPrice - entryMid) / entryMid) * 100;
 
+  // Calculate live R/R based on current ask price
+  const liveRR = calculateLiveRR(currentPrice, trade);
+
   return {
     ...opportunity,
     adjustedScore: Math.min(100, Math.max(0, adjustedScore)),
     priceStatus,
     currentPrice,
-    priceChange
+    priceChange,
+    liveRR
   };
 }
 
@@ -80,29 +86,28 @@ export function recalculateScore(
  */
 export type PriceStatus = 
   | 'in_zone'      // Price is within entry zone
-  | 'near_zone'    // Price is close to entry zone (within 2%)
   | 'above_zone'   // Price is above entry zone
   | 'below_zone'   // Price is below entry zone
-  | 'triggered'    // Price hit entry and is now at target
+  | 'triggered'    // Price hit target
   | 'stopped_out'  // Price hit stop loss
   | 'unknown';
 
 function getPriceStatus(currentPrice: number, trade: Trade): PriceStatus {
   const { entryZone, stopLoss, targets, bias } = trade;
   
-  // Check if stopped out
-  if (bias === 'bullish' && currentPrice <= stopLoss) {
+  // Check if stopped out (with sanity checks for consistent data)
+  if (bias === 'bullish' && stopLoss < entryZone.low && currentPrice <= stopLoss) {
     return 'stopped_out';
   }
-  if (bias === 'bearish' && currentPrice >= stopLoss) {
+  if (bias === 'bearish' && stopLoss > entryZone.high && currentPrice >= stopLoss) {
     return 'stopped_out';
   }
   
-  // Check if target hit (PT1)
-  if (bias === 'bullish' && currentPrice >= targets.pt1) {
+  // Check if target hit (PT1) - with sanity checks
+  if (bias === 'bullish' && targets.pt1 > entryZone.high && currentPrice >= targets.pt1) {
     return 'triggered';
   }
-  if (bias === 'bearish' && currentPrice <= targets.pt1) {
+  if (bias === 'bearish' && targets.pt1 < entryZone.low && currentPrice <= targets.pt1) {
     return 'triggered';
   }
   
@@ -111,25 +116,43 @@ function getPriceStatus(currentPrice: number, trade: Trade): PriceStatus {
     return 'in_zone';
   }
   
-  // Check near zone (within 2% of entry zone)
-  const zoneWidth = entryZone.high - entryZone.low;
-  const nearThreshold = Math.max(zoneWidth * 0.5, entryZone.low * 0.02);
-  
+  // Price is outside entry zone
   if (currentPrice < entryZone.low) {
-    if (entryZone.low - currentPrice <= nearThreshold) {
-      return 'near_zone';
-    }
     return 'below_zone';
   }
   
   if (currentPrice > entryZone.high) {
-    if (currentPrice - entryZone.high <= nearThreshold) {
-      return 'near_zone';
-    }
     return 'above_zone';
   }
   
   return 'unknown';
+}
+
+/**
+ * Calculates live Risk/Reward ratio based on current price
+ */
+function calculateLiveRR(currentPrice: number, trade: Trade): number | undefined {
+  const { stopLoss, targets, bias } = trade;
+  
+  let risk: number;
+  let reward: number;
+  
+  if (bias === 'bullish') {
+    // Bullish: risk is distance to stop (below), reward is distance to target (above)
+    risk = currentPrice - stopLoss;
+    reward = targets.pt1 - currentPrice;
+  } else {
+    // Bearish: risk is distance to stop (above), reward is distance to target (below)
+    risk = stopLoss - currentPrice;
+    reward = currentPrice - targets.pt1;
+  }
+  
+  // Invalid if risk or reward is negative or zero
+  if (risk <= 0 || reward <= 0) {
+    return undefined;
+  }
+  
+  return reward / risk;
 }
 
 /**
@@ -194,6 +217,7 @@ export interface AdjustedOpportunity extends ScoredOpportunity {
   priceStatus: PriceStatus;
   currentPrice: number | undefined;
   priceChange: number; // Percentage change from entry zone mid
+  liveRR: number | undefined; // Live risk/reward based on current price
 }
 
 /**
@@ -214,10 +238,10 @@ export function filterByPriceStatus(
 }
 
 /**
- * Gets actionable opportunities (in zone or near zone)
+ * Gets actionable opportunities (in zone)
  */
 export function getActionableOpportunities(opportunities: AdjustedOpportunity[]): AdjustedOpportunity[] {
-  return filterByPriceStatus(opportunities, ['in_zone', 'near_zone']);
+  return filterByPriceStatus(opportunities, ['in_zone']);
 }
 
 /**

@@ -20,8 +20,6 @@ function getPriceStatusInfo(status: PriceStatus): { label: string; color: string
   switch (status) {
     case 'in_zone':
       return { label: 'IN ZONE', color: 'bg-green-500' };
-    case 'near_zone':
-      return { label: 'NEAR', color: 'bg-yellow-500' };
     case 'above_zone':
       return { label: 'ABOVE', color: 'bg-blue-500' };
     case 'below_zone':
@@ -42,11 +40,12 @@ interface OpportunityCardProps {
 }
 
 function OpportunityCard({ opportunity, onSelect, rankChange }: OpportunityCardProps) {
-  const { tradingPlan, score, scoreBreakdown, adjustedScore, priceStatus, currentPrice, priceChange } = opportunity;
+  const { tradingPlan, score, scoreBreakdown, adjustedScore, priceStatus, currentPrice, priceChange, liveRR } = opportunity;
   const { trade, technicals } = tradingPlan;
   const statusInfo = getPriceStatusInfo(priceStatus);
   const hasLivePrice = currentPrice !== undefined;
   const displayScore = hasLivePrice ? adjustedScore : score;
+  const hasLiveRR = liveRR !== undefined && liveRR > 0;
 
   return (
     <div 
@@ -102,7 +101,14 @@ function OpportunityCard({ opportunity, onSelect, rankChange }: OpportunityCardP
         </div>
         <div>
           <p className="text-gray-400">R/R Ratio</p>
-          <p className="text-white">{trade.riskRewardRatio.toFixed(2)}:1</p>
+          <div className="flex items-center gap-2">
+            {hasLiveRR && liveRR !== trade.riskRewardRatio && (
+              <span className="text-gray-500 text-xs line-through">{trade.riskRewardRatio.toFixed(2)}:1</span>
+            )}
+            <p className={hasLiveRR ? (liveRR >= 2 ? 'text-green-400' : liveRR >= 1 ? 'text-yellow-400' : 'text-red-400') : 'text-white'}>
+              {hasLiveRR ? liveRR.toFixed(2) : trade.riskRewardRatio.toFixed(2)}:1
+            </p>
+          </div>
         </div>
         <div>
           <p className="text-gray-400">Stop Loss</p>
@@ -185,10 +191,10 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
 
   // Count opportunities by status
   const statusCounts = useMemo(() => {
-    const counts = { inZone: 0, nearZone: 0, other: 0 };
+    const counts = { inZone: 0, belowZone: 0, other: 0 };
     displayOpportunities.forEach(opp => {
       if (opp.priceStatus === 'in_zone') counts.inZone++;
-      else if (opp.priceStatus === 'near_zone') counts.nearZone++;
+      else if (opp.priceStatus === 'below_zone') counts.belowZone++;
       else counts.other++;
     });
     return counts;
@@ -266,8 +272,8 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
               {statusCounts.inZone > 0 && (
                 <span className="text-green-400">{statusCounts.inZone} in zone</span>
               )}
-              {statusCounts.nearZone > 0 && (
-                <span className="text-yellow-400">{statusCounts.nearZone} near</span>
+              {statusCounts.belowZone > 0 && (
+                <span className="text-blue-400">{statusCounts.belowZone} below</span>
               )}
             </div>
           )}
