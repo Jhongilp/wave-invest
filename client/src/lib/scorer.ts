@@ -167,15 +167,14 @@ function calculateProximityScore(currentPrice: number, trade: Trade): number {
   }
   
   if (bias === 'bullish') {
-    // For bullish: below entry is good (can still enter), above is less good
     if (currentPrice < entryZone.low) {
-      // Below entry zone - still good if above stop loss
-      const distanceFromStop = currentPrice - stopLoss;
-      const rangeToStop = entryZone.low - stopLoss;
-      if (rangeToStop > 0) {
-        const ratio = distanceFromStop / rangeToStop;
-        return Math.max(0, ratio * 100);
+      // Below entry zone for bullish = GOOD (better entry price)
+      // Full score if still above stop loss
+      if (currentPrice > stopLoss) {
+        return 100; // Great opportunity - buying below recommended entry
       }
+      // Below stop loss = invalid
+      return 0;
     } else {
       // Above entry zone - score decreases as we approach PT1
       const distanceFromEntry = currentPrice - entryZone.high;
@@ -186,15 +185,14 @@ function calculateProximityScore(currentPrice: number, trade: Trade): number {
       }
     }
   } else if (bias === 'bearish') {
-    // For bearish: above entry is good (can still enter), below is less good
     if (currentPrice > entryZone.high) {
-      // Above entry zone - still good if below stop loss
-      const distanceFromStop = stopLoss - currentPrice;
-      const rangeToStop = stopLoss - entryZone.high;
-      if (rangeToStop > 0) {
-        const ratio = distanceFromStop / rangeToStop;
-        return Math.max(0, ratio * 100);
+      // Above entry zone for bearish = GOOD (better short entry)
+      // Full score if still below stop loss
+      if (currentPrice < stopLoss) {
+        return 100; // Great opportunity - shorting above recommended entry
       }
+      // Above stop loss = invalid
+      return 0;
     } else {
       // Below entry zone - score decreases as we approach PT1
       const distanceFromEntry = entryZone.low - currentPrice;
