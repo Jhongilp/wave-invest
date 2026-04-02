@@ -23,8 +23,8 @@ const (
 	// Send pings to peer with this period
 	pingPeriod = (pongWait * 9) / 10
 
-	// Maximum message size allowed from peer
-	maxMessageSize = 512
+	// Maximum message size allowed from peer (8KB to handle large symbol lists)
+	maxMessageSize = 8192
 )
 
 var upgrader = websocket.Upgrader{
@@ -74,20 +74,28 @@ type Client struct {
 	send     chan etoro.LivePrice
 }
 
+// WebSocketHandler handles WebSocket connections with a shared PriceHub
+type WebSocketHandler struct {
+	priceHub *services.PriceHub
+}
+
+// NewWebSocketHandler creates a new WebSocket handler with the given PriceHub
+func NewWebSocketHandler(priceHub *services.PriceHub) *WebSocketHandler {
+	return &WebSocketHandler{priceHub: priceHub}
+}
+
 // HandleWebSocket handles WebSocket connections for live price updates
-func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+func (h *WebSocketHandler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket: Upgrade failed: %v", err)
 		return
 	}
 
-	priceHub := services.NewPriceHub()
-
 	client := &Client{
 		id:       uuid.New().String(),
 		conn:     conn,
-		priceHub: priceHub,
+		priceHub: h.priceHub,
 		send:     make(chan etoro.LivePrice, 256),
 	}
 
@@ -119,8 +127,10 @@ func (c *Client) readPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
+			// Log ALL read errors for debugging
+			log.Printf("WebSocket: Read error for client %s: %v", c.id, err)
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket: Read error: %v", err)
+				log.Printf("WebSocket: Unexpected close error: %v", err)
 			}
 			break
 		}

@@ -143,6 +143,15 @@ func (c *WSClient) Connect() error {
 		return nil // Already connected
 	}
 
+	// Reinitialize done channel (may have been closed on previous disconnect)
+	select {
+	case <-c.done:
+		// Channel was closed, create new one
+		c.done = make(chan struct{})
+	default:
+		// Channel is still open
+	}
+
 	log.Printf("eToro WS: Connecting to %s (isDemo=%v)", etoroWSURL, c.isDemo)
 
 	dialer := websocket.DefaultDialer
@@ -289,7 +298,16 @@ func (c *WSClient) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	close(c.done)
+	// Close done channel (reading from closed channel returns immediately)
+	select {
+	case <-c.done:
+		// Already closed
+	default:
+		close(c.done)
+	}
+
+	// Clear subscriptions (will need to resubscribe on reconnect)
+	c.subscriptions = make(map[int]bool)
 
 	if c.conn != nil {
 		err := c.conn.Close()
@@ -435,6 +453,10 @@ func (c *WSClient) handlePriceUpdate(msg WSPriceMsg) {
 	handlers := make([]PriceHandler, len(c.handlers))
 	copy(handlers, c.handlers)
 	c.mu.RUnlock()
+
+	if len(handlers) == 0 {
+		log.Printf("eToro WS: No handlers registered for price update: %s", symbol)
+	}
 
 	for _, handler := range handlers {
 		handler(livePrice)

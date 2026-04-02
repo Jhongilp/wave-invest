@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -22,6 +23,16 @@ func main() {
 
 	// Initialize configuration (must be called after loading .env)
 	cfg := config.Load()
+
+	// Load trading mode from Firestore (overrides env default if saved)
+	settingsService := services.NewSettingsService()
+	if savedMode, err := settingsService.GetTradingMode(context.Background()); err != nil {
+		log.Printf("Warning: Failed to load trading mode from Firestore: %v", err)
+	} else if savedMode != "" {
+		log.Printf("Loading trading mode from Firestore: %s", savedMode)
+		cfg.SetTradingMode(config.TradingMode(savedMode))
+	}
+
 	log.Printf("Trading mode: %s", cfg.TradingMode)
 
 	// Initialize and start PriceHub for live price streaming
@@ -30,6 +41,9 @@ func main() {
 		log.Printf("Warning: Failed to start PriceHub: %v", err)
 		// Continue anyway - prices will connect when first client subscribes
 	}
+
+	// Create WebSocket handler with shared PriceHub
+	wsHandler := handlers.NewWebSocketHandler(priceHub)
 
 	r := chi.NewRouter()
 
@@ -54,8 +68,8 @@ func main() {
 	// Routes
 	r.Get("/health", handlers.HealthCheck)
 
-	// WebSocket endpoint for live price updates
-	r.Get("/ws", handlers.HandleWebSocket)
+	// WebSocket endpoint for live price updates (uses shared PriceHub)
+	r.Get("/ws", wsHandler.HandleWebSocket)
 
 	r.Route("/api", func(r chi.Router) {
 		// Phase 1: Watchlist & Analysis

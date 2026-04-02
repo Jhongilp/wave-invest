@@ -33,7 +33,9 @@ export function useLivePrices(options: UseLivePricesOptions = {}): UseLivePrices
 
   // Connect to WebSocket
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    // Prevent duplicate connections - check both OPEN and CONNECTING states
+    const currentState = wsRef.current?.readyState;
+    if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) {
       return;
     }
 

@@ -49,11 +49,34 @@ func (h *PriceHub) Start() error {
 		return nil
 	}
 	h.running = true
+
+	// Collect all currently subscribed symbols to resubscribe
+	symbolsToResubscribe := make([]string, 0, len(h.symbolSubs))
+	for sym := range h.symbolSubs {
+		symbolsToResubscribe = append(symbolsToResubscribe, sym)
+	}
 	h.mu.Unlock()
 
-	// Register price handler (connection happens lazily on first subscription)
+	// Clear any existing handlers and register fresh one
+	// (prevents duplicates after Stop/Start cycles)
 	if h.wsClient != nil {
+		h.wsClient.RemoveAllHandlers()
 		h.wsClient.AddHandler(h.handlePrice)
+	}
+
+	// Resubscribe to existing symbols after restart
+	if len(symbolsToResubscribe) > 0 && h.wsClient != nil {
+		go func() {
+			if err := h.ensureConnected(); err != nil {
+				log.Printf("PriceHub: Failed to connect for resubscribe: %v", err)
+				return
+			}
+			if err := h.wsClient.Subscribe(symbolsToResubscribe); err != nil {
+				log.Printf("PriceHub: Failed to resubscribe: %v", err)
+			} else {
+				log.Printf("PriceHub: Resubscribed to %d symbols", len(symbolsToResubscribe))
+			}
+		}()
 	}
 
 	log.Println("PriceHub: Started (will connect to eToro on first subscription)")
@@ -220,9 +243,12 @@ func (h *PriceHub) handlePrice(price etoro.LivePrice) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	log.Printf("PriceHub: Received price for %s: bid=%.2f ask=%.2f", price.Symbol, price.Bid, price.Ask)
+
 	// Find clients subscribed to this symbol
 	clients, ok := h.symbolSubs[price.Symbol]
 	if !ok {
+		log.Printf("PriceHub: No clients subscribed to %s", price.Symbol)
 		return
 	}
 

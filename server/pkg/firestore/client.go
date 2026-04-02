@@ -96,3 +96,6 @@ func CollectionPortfolios() string   { return getPrefix() + "portfolios" }
 func CollectionPositions() string    { return getPrefix() + "positions" }
 func CollectionTransactions() string { return getPrefix() + "transactions" }
 func CollectionAnalysis() string     { return getPrefix() + "daily_analysis" }
+
+// CollectionSettings returns the settings collection (NOT prefixed - global setting)
+func CollectionSettings() string { return "settings" }
