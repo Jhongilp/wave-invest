@@ -93,6 +93,7 @@ type WSClient struct {
 	subscriptions map[int]bool // instrument IDs currently subscribed
 	handlers      []PriceHandler
 	mu            sync.RWMutex
+	writeMu       sync.Mutex // Separate mutex for write operations (websocket not concurrent-safe)
 	done          chan struct{}
 	reconnecting  bool
 	authenticated bool
@@ -318,11 +319,26 @@ func (c *WSClient) Close() error {
 	return nil
 }
 
-// sendMessage sends a JSON message over WebSocket
+// sendMessage sends a JSON message over WebSocket (thread-safe)
 func (c *WSClient) sendMessage(msg WSMessage) error {
-	if c.conn == nil {
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+
+	if conn == nil {
 		return fmt.Errorf("not connected")
 	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	// Re-check connection under write lock (may have closed while waiting)
+	c.mu.RLock()
+	if c.conn == nil {
+		c.mu.RUnlock()
+		return fmt.Errorf("connection closed")
+	}
+	c.mu.RUnlock()
 
 	c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.conn.WriteJSON(msg)
@@ -347,12 +363,17 @@ func (c *WSClient) readMessages() {
 		default:
 		}
 
-		_, message, err := c.conn.ReadMessage()
+		msgType, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("eToro WS: Read error: %v", err)
 			}
 			return
+		}
+
+		// Only process text messages (JSON)
+		if msgType != websocket.TextMessage {
+			continue
 		}
 
 		c.handleMessage(message)
@@ -361,6 +382,11 @@ func (c *WSClient) readMessages() {
 
 // handleMessage processes a single incoming message
 func (c *WSClient) handleMessage(data []byte) {
+	// Skip empty or binary messages (pong responses, heartbeats, etc.)
+	if len(data) == 0 || data[0] == 0x00 {
+		return
+	}
+
 	var resp WSResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		log.Printf("eToro WS: Failed to parse message: %v", err)
@@ -478,8 +504,12 @@ func (c *WSClient) pingLoop() {
 			c.mu.RUnlock()
 
 			if conn != nil {
+				c.writeMu.Lock()
 				conn.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				c.writeMu.Unlock()
+
+				if err != nil {
 					log.Printf("eToro WS: Ping failed: %v", err)
 					return
 				}
