@@ -4,3 +4,4 @@ export * from './useOpportunities';
 export * from './usePortfolio';
 export * from './useSettings';
 export * from './useTradingMode';
+export * from './useLivePrices';

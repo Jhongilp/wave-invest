@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"wave_invest/config"
+	"wave_invest/internal/services"
 )
 
 type TradingModeResponse struct {
@@ -47,6 +49,13 @@ func SetTradingMode(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Invalid mode. Must be 'demo' or 'real'", http.StatusBadRequest)
 		return
+	}
+
+	// Persist to Firestore
+	settingsService := services.NewSettingsService()
+	if err := settingsService.SetTradingMode(r.Context(), string(mode)); err != nil {
+		log.Printf("Failed to persist trading mode to Firestore: %v", err)
+		// Continue anyway - will still work in memory
 	}
 
 	cfg := config.Get()

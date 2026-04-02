@@ -52,4 +52,5 @@ type TradingPlan struct {
 	Trade      Trade      `json:"trade"`
 	Sentiment  Sentiment  `json:"sentiment"`
 	Summary    string     `json:"summary"`
+	InitialAsk float64    `json:"initialAsk,omitempty"` // Ask price at time of analysis
 }

@@ -330,3 +330,42 @@ func (s *AnalysisService) CleanupOldAnalysis(ctx context.Context, retentionDays 
 
 	return count, nil
 }
+
+// DeleteAnalysisByDate deletes all analyses for a specific date
+func (s *AnalysisService) DeleteAnalysisByDate(ctx context.Context, date string) (int, error) {
+	iter := s.client.Collection(fs.CollectionAnalysis()).
+		Where("date", "==", date).
+		Documents(ctx)
+
+	batch := s.client.Batch()
+	count := 0
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return count, fmt.Errorf("failed to iterate analyses for date %s: %w", date, err)
+		}
+
+		batch.Delete(doc.Ref)
+		count++
+
+		// Firestore batches are limited to 500 operations
+		if count%500 == 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				return count, fmt.Errorf("failed to commit batch delete: %w", err)
+			}
+			batch = s.client.Batch()
+		}
+	}
+
+	if count > 0 && count%500 != 0 {
+		if _, err := batch.Commit(ctx); err != nil {
+			return count, fmt.Errorf("failed to commit final batch delete: %w", err)
+		}
+	}
+
+	return count, nil
+}
