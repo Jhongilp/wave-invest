@@ -6,6 +6,7 @@ import (
 
 	"wave_invest/config"
 	"wave_invest/internal/handlers"
+	"wave_invest/internal/services"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -22,6 +23,13 @@ func main() {
 	// Initialize configuration (must be called after loading .env)
 	cfg := config.Load()
 	log.Printf("Trading mode: %s", cfg.TradingMode)
+
+	// Initialize and start PriceHub for live price streaming
+	priceHub := services.NewPriceHub()
+	if err := priceHub.Start(); err != nil {
+		log.Printf("Warning: Failed to start PriceHub: %v", err)
+		// Continue anyway - prices will connect when first client subscribes
+	}
 
 	r := chi.NewRouter()
 
@@ -45,6 +53,9 @@ func main() {
 
 	// Routes
 	r.Get("/health", handlers.HealthCheck)
+
+	// WebSocket endpoint for live price updates
+	r.Get("/ws", handlers.HandleWebSocket)
 
 	r.Route("/api", func(r chi.Router) {
 		// Phase 1: Watchlist & Analysis

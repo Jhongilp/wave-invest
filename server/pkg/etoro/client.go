@@ -620,3 +620,21 @@ func (c *Client) GetTradingHistory(minDate string) ([]TradeHistoryItem, error) {
 func (c *Client) IsDemo() bool {
 	return c.isDemo
 }
+
+// GetSymbolMappings returns a copy of the symbol to instrument ID mappings
+func (c *Client) GetSymbolMappings() map[string]int {
+	result := make(map[string]int, len(c.symbolToID))
+	for sym, id := range c.symbolToID {
+		result[sym] = id
+	}
+	return result
+}
+
+// GetIDSymbolMappings returns a copy of the instrument ID to symbol mappings
+func (c *Client) GetIDSymbolMappings() map[int]string {
+	result := make(map[int]string, len(c.idToSymbol))
+	for id, sym := range c.idToSymbol {
+		result[id] = sym
+	}
+	return result
+}

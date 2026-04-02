@@ -1,5 +1,6 @@
-import { useOpportunities } from '../../hooks';
-import type { ScoredOpportunity } from '../../types';
+import { useMemo } from 'react';
+import { useOpportunities, useLivePrices } from '../../hooks';
+import { recalculateScore, sortByAdjustedScore, type AdjustedOpportunity, type PriceStatus } from '../../lib/scorer';
 
 function getScoreColor(score: number): string {
   if (score >= 70) return 'bg-green-500';
@@ -13,14 +14,36 @@ function getBiasColor(bias: string): string {
   return 'text-gray-400';
 }
 
+function getPriceStatusInfo(status: PriceStatus): { label: string; color: string } {
+  switch (status) {
+    case 'in_zone':
+      return { label: 'IN ZONE', color: 'bg-green-500' };
+    case 'near_zone':
+      return { label: 'NEAR', color: 'bg-yellow-500' };
+    case 'above_zone':
+      return { label: 'ABOVE', color: 'bg-blue-500' };
+    case 'below_zone':
+      return { label: 'BELOW', color: 'bg-blue-500' };
+    case 'triggered':
+      return { label: 'TARGET HIT', color: 'bg-purple-500' };
+    case 'stopped_out':
+      return { label: 'STOPPED', color: 'bg-red-600' };
+    default:
+      return { label: '', color: '' };
+  }
+}
+
 interface OpportunityCardProps {
-  opportunity: ScoredOpportunity;
+  opportunity: AdjustedOpportunity;
   onSelect: (ticker: string) => void;
 }
 
 function OpportunityCard({ opportunity, onSelect }: OpportunityCardProps) {
-  const { tradingPlan, score, scoreBreakdown } = opportunity;
+  const { tradingPlan, score, scoreBreakdown, adjustedScore, priceStatus, currentPrice, priceChange } = opportunity;
   const { trade, technicals } = tradingPlan;
+  const statusInfo = getPriceStatusInfo(priceStatus);
+  const hasLivePrice = currentPrice !== undefined;
+  const displayScore = hasLivePrice ? adjustedScore : score;
 
   return (
     <div 
@@ -33,11 +56,36 @@ function OpportunityCard({ opportunity, onSelect }: OpportunityCardProps) {
           <span className={`text-sm font-medium ${getBiasColor(trade.bias)}`}>
             {trade.bias.toUpperCase()}
           </span>
+          {statusInfo.label && (
+            <span className={`${statusInfo.color} text-white text-xs font-bold px-2 py-0.5 rounded`}>
+              {statusInfo.label}
+            </span>
+          )}
         </div>
-        <div className={`${getScoreColor(score)} text-white text-sm font-bold px-3 py-1 rounded-full`}>
-          {score.toFixed(0)}
+        <div className="flex items-center gap-2">
+          {hasLivePrice && adjustedScore !== score && (
+            <span className="text-gray-500 text-xs line-through">{score.toFixed(0)}</span>
+          )}
+          <div className={`${getScoreColor(displayScore)} text-white text-sm font-bold px-3 py-1 rounded-full`}>
+            {displayScore.toFixed(0)}
+          </div>
         </div>
       </div>
+
+      {/* Live Price Section */}
+      {hasLivePrice && (
+        <div className="bg-gray-900 rounded p-2 mb-3">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400 text-xs">Live Price</span>
+            <div className="flex items-center gap-2">
+              <span className="text-white font-mono text-sm">${currentPrice.toFixed(2)}</span>
+              <span className={`text-xs ${priceChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {priceChange >= 0 ? '↑' : '↓'} {Math.abs(priceChange).toFixed(2)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
@@ -87,6 +135,37 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
     executeTrades,
   } = useOpportunities();
 
+  // Extract symbols from opportunities for WebSocket subscription
+  const symbols = useMemo(() => 
+    opportunities.map(opp => opp.tradingPlan.ticker),
+    [opportunities]
+  );
+
+  // Subscribe to live prices for all opportunity symbols
+  const { prices, isConnected, error: wsError } = useLivePrices({ 
+    symbols,
+    autoConnect: symbols.length > 0
+  });
+
+  // Recalculate scores with live prices and sort
+  const adjustedOpportunities = useMemo(() => {
+    const adjusted = opportunities.map(opp => 
+      recalculateScore(opp, prices[opp.tradingPlan.ticker])
+    );
+    return sortByAdjustedScore(adjusted);
+  }, [opportunities, prices]);
+
+  // Count opportunities by status
+  const statusCounts = useMemo(() => {
+    const counts = { inZone: 0, nearZone: 0, other: 0 };
+    adjustedOpportunities.forEach(opp => {
+      if (opp.priceStatus === 'in_zone') counts.inZone++;
+      else if (opp.priceStatus === 'near_zone') counts.nearZone++;
+      else counts.other++;
+    });
+    return counts;
+  }, [adjustedOpportunities]);
+
   const handleSelect = (ticker: string) => {
     if (onSelectTicker) {
       onSelectTicker(ticker);
@@ -112,12 +191,32 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
     <div className="p-4 md:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-white">Opportunities</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl md:text-2xl font-bold text-white">Opportunities</h1>
+            {/* WebSocket connection status */}
+            <div className="flex items-center gap-1.5">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+              <span className="text-xs text-gray-500">
+                {isConnected ? 'Live' : 'Offline'}
+              </span>
+            </div>
+          </div>
           {lastAnalysisDate && (
             <p className="text-gray-400 text-xs md:text-sm">
               {opportunities.length} opportunities from {lastAnalysisDate}
               {isStale && <span className="text-yellow-400 ml-2">(stale)</span>}
             </p>
+          )}
+          {/* Status counts */}
+          {hasExistingData && isConnected && (
+            <div className="flex gap-3 mt-1 text-xs">
+              {statusCounts.inZone > 0 && (
+                <span className="text-green-400">{statusCounts.inZone} in zone</span>
+              )}
+              {statusCounts.nearZone > 0 && (
+                <span className="text-yellow-400">{statusCounts.nearZone} near</span>
+              )}
+            </div>
           )}
           {analysisResult && (
             <p className="text-gray-500 text-xs mt-1">
@@ -151,6 +250,12 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         </div>
       )}
 
+      {wsError && (
+        <div className="bg-yellow-900/50 border border-yellow-500 text-yellow-200 px-3 py-2 rounded-lg mb-4 text-sm">
+          Live prices unavailable: {wsError}
+        </div>
+      )}
+
       {executionResult && (
         <div className="bg-green-900/50 border border-green-500 text-green-200 px-4 py-3 rounded-lg mb-6">
           Executed {executionResult.executedCount} trades, skipped {executionResult.skippedCount}
@@ -175,7 +280,7 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         </div>
       )}
 
-      {opportunities.length === 0 && !loading ? (
+      {adjustedOpportunities.length === 0 && !loading ? (
         <div className="text-center py-12">
           <p className="text-gray-400 text-lg">No opportunities available</p>
           <p className="text-gray-500 text-sm mt-2">
@@ -184,7 +289,7 @@ export function OpportunitiesView({ onSelectTicker }: OpportunitiesViewProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {opportunities.map((opp) => (
+          {adjustedOpportunities.map((opp) => (
             <OpportunityCard
               key={opp.tradingPlan.ticker}
               opportunity={opp}
