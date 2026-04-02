@@ -638,3 +638,110 @@ func (c *Client) GetIDSymbolMappings() map[int]string {
 	}
 	return result
 }
+
+// LiveRate represents real-time rate data for an instrument
+type LiveRate struct {
+	InstrumentID  int     `json:"instrumentID"`
+	Ask           float64 `json:"ask"`
+	Bid           float64 `json:"bid"`
+	LastExecution float64 `json:"lastExecution"`
+	Date          string  `json:"date"`
+	Symbol        string  `json:"symbol"` // Populated from cache
+}
+
+// LiveRatesResponse represents the response from the rates API
+type LiveRatesResponse struct {
+	Rates []LiveRate `json:"rates"`
+}
+
+// GetLiveRates fetches real-time bid/ask prices for given instrument IDs
+func (c *Client) GetLiveRates(instrumentIDs []int) (map[int]LiveRate, error) {
+	if len(instrumentIDs) == 0 {
+		return make(map[int]LiveRate), nil
+	}
+
+	result := make(map[int]LiveRate)
+	batchSize := 100 // API max is 100
+
+	for i := 0; i < len(instrumentIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(instrumentIDs) {
+			end = len(instrumentIDs)
+		}
+		batch := instrumentIDs[i:end]
+
+		// Convert IDs to comma-separated string
+		idStrs := make([]string, len(batch))
+		for j, id := range batch {
+			idStrs[j] = strconv.Itoa(id)
+		}
+
+		req, err := http.NewRequest("GET", c.baseURL+"/api/v1/market-data/instruments/rates", nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		// Set raw query without URL-encoding commas
+		req.URL.RawQuery = "instrumentIds=" + strings.Join(idStrs, ",")
+
+		body, err := c.doRequest(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get live rates: %w", err)
+		}
+
+		var response LiveRatesResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to parse rates response: %w", err)
+		}
+
+		for _, rate := range response.Rates {
+			// Add symbol from cache if available
+			if sym, ok := c.idToSymbol[rate.InstrumentID]; ok {
+				rate.Symbol = sym
+			}
+			result[rate.InstrumentID] = rate
+		}
+	}
+
+	return result, nil
+}
+
+// GetLiveRatesBySymbols fetches real-time bid/ask prices for given symbols
+func (c *Client) GetLiveRatesBySymbols(symbols []string) (map[string]LiveRate, error) {
+	// Ensure symbol mappings are loaded
+	if len(c.symbolToID) == 0 {
+		_, err := c.GetWatchlist()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load watchlist: %w", err)
+		}
+	}
+
+	// Convert symbols to instrument IDs
+	instrumentIDs := make([]int, 0, len(symbols))
+	symbolToRequestedCase := make(map[int]string) // Track original case
+
+	for _, sym := range symbols {
+		if id, ok := c.symbolToID[strings.ToUpper(sym)]; ok {
+			instrumentIDs = append(instrumentIDs, id)
+			symbolToRequestedCase[id] = sym
+		}
+	}
+
+	// Fetch rates by IDs
+	ratesById, err := c.GetLiveRates(instrumentIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to symbol-keyed map
+	result := make(map[string]LiveRate, len(ratesById))
+	for id, rate := range ratesById {
+		// Use the symbol from our cache
+		if sym, ok := c.idToSymbol[id]; ok {
+			rate.Symbol = sym
+			result[sym] = rate
+		}
+	}
+
+	return result, nil
+}

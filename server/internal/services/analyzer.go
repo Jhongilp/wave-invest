@@ -21,8 +21,13 @@ func NewAnalyzerService() *AnalyzerService {
 }
 
 func (s *AnalyzerService) Analyze(ticker string) (*models.TradingPlan, error) {
-	// Generate trading plan using Gemini AI (Gemini retrieves market data)
-	plan, err := s.geminiClient.GenerateTradingPlan(ticker)
+	return s.AnalyzeWithPrice(ticker, nil)
+}
+
+// AnalyzeWithPrice analyzes a ticker with real-time price data
+func (s *AnalyzerService) AnalyzeWithPrice(ticker string, priceInfo *gemini.PriceInfo) (*models.TradingPlan, error) {
+	// Generate trading plan using Gemini AI with price data
+	plan, err := s.geminiClient.GenerateTradingPlanWithPrice(ticker, priceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +40,15 @@ func (s *AnalyzerService) Analyze(ticker string) (*models.TradingPlan, error) {
 	return plan, nil
 }
 
+// TickerPriceInfo maps a ticker to its price info
+type TickerPriceInfo map[string]*gemini.PriceInfo
+
 func (s *AnalyzerService) AnalyzeBatch(tickers []string) ([]*models.TradingPlan, error) {
+	return s.AnalyzeBatchWithPrices(tickers, nil)
+}
+
+// AnalyzeBatchWithPrices analyzes multiple tickers with their real-time price data
+func (s *AnalyzerService) AnalyzeBatchWithPrices(tickers []string, prices TickerPriceInfo) ([]*models.TradingPlan, error) {
 	plans := make([]*models.TradingPlan, 0, len(tickers))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -45,7 +58,14 @@ func (s *AnalyzerService) AnalyzeBatch(tickers []string) ([]*models.TradingPlan,
 		wg.Add(1)
 		go func(t string) {
 			defer wg.Done()
-			plan, err := s.Analyze(t)
+
+			// Get price info for this ticker if available
+			var priceInfo *gemini.PriceInfo
+			if prices != nil {
+				priceInfo = prices[t]
+			}
+
+			plan, err := s.AnalyzeWithPrice(t, priceInfo)
 			if err != nil {
 				errChan <- err
 				return

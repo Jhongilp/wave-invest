@@ -18,6 +18,13 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// PriceInfo contains real-time bid/ask price data for analysis
+type PriceInfo struct {
+	Bid  float64
+	Ask  float64
+	Last float64
+}
+
 func NewClient() *Client {
 	return &Client{
 		apiKey: strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
@@ -29,7 +36,12 @@ func NewClient() *Client {
 
 // GenerateTradingPlan uses Gemini AI with Google Search grounding to analyze a ticker
 func (c *Client) GenerateTradingPlan(ticker string) (*models.TradingPlan, error) {
-	prompt := buildAnalysisPrompt(ticker)
+	return c.GenerateTradingPlanWithPrice(ticker, nil)
+}
+
+// GenerateTradingPlanWithPrice uses Gemini AI with real-time price data for precise analysis
+func (c *Client) GenerateTradingPlanWithPrice(ticker string, priceInfo *PriceInfo) (*models.TradingPlan, error) {
+	prompt := buildAnalysisPrompt(ticker, priceInfo)
 
 	reqBody := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -156,13 +168,26 @@ func getResponseSchema() map[string]interface{} {
 	}
 }
 
-func buildAnalysisPrompt(ticker string) string {
+func buildAnalysisPrompt(ticker string, priceInfo *PriceInfo) string {
+	priceContext := ""
+	if priceInfo != nil && priceInfo.Ask > 0 {
+		priceContext = fmt.Sprintf(`
+REAL-TIME PRICE DATA (from broker):
+- Current Ask (buy price): $%.2f
+- Current Bid (sell price): $%.2f
+- Last Execution: $%.2f
+
+IMPORTANT: Use this exact Ask price ($%.2f) as the reference point for your analysis.
+Calculate the Entry Zone, Stop Loss, and Targets based on this real execution price.
+The Risk/Reward ratio should be calculated using the Ask price as the entry point.
+`, priceInfo.Ask, priceInfo.Bid, priceInfo.Last, priceInfo.Ask)
+	}
+
 	return fmt.Sprintf(`You are an expert swing trading analyst. Use Google Search to get CURRENT real-time market data.
 
-IMPORTANT: Search for the latest stock price and market data for ticker: %s
-
+IMPORTANT: Search for the latest market data for ticker: %s
+%s
 Use Google Search to find:
-- Current stock price (as of today)
 - Recent price action and trends
 - Current technical indicator values
 - Recent news and sentiment
@@ -193,8 +218,9 @@ Then generate a comprehensive swing trading plan with:
 5. SUMMARY:
    - Concise actionable trading summary including the current price
 
-Focus on swing trading timeframe (1-4 weeks holding period). All price levels must reflect CURRENT market prices from your search.
-`, ticker)
+Focus on swing trading timeframe (1-4 weeks holding period). All price levels must reflect CURRENT market prices.
+The Stop Loss should be placed at a level that invalidates the trade thesis (below recent swing low for bullish).
+`, ticker, priceContext)
 }
 
 // APIResponse represents the Gemini API response structure
