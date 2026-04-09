@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { LivePrice, LivePriceMap, WSMessage } from '../types';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+// Derive WebSocket URL from API URL in production, fallback to localhost in development
+function getWebSocketUrl(): string {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (apiUrl) {
+    // Convert https:// to wss:// or http:// to ws://
+    return apiUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws';
+  }
+  return 'ws://localhost:8080/ws';
+}
+
+const WS_URL = getWebSocketUrl();
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
